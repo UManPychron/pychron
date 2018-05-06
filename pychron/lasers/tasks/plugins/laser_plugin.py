@@ -15,6 +15,8 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 
 from envisage.ui.tasks.task_extension import TaskExtension
@@ -31,7 +33,7 @@ from pychron.envisage.tasks.list_actions import PatternAction, ShowMotionConfigu
 from pychron.lasers.laser_managers.ilaser_manager import ILaserManager
 from pychron.lasers.tasks.laser_actions import OpenPowerMapAction, OpenPatternAction, NewPatternAction, \
     LaserScriptExecuteAction
-from pychron.lasers.tasks.laser_calibration_task import LaserCalibrationTask
+# from pychron.lasers.tasks.laser_calibration_task import LaserCalibrationTask
 from pychron.paths import paths
 
 
@@ -93,7 +95,7 @@ class BaseLaserPlugin(BaseTaskPlugin):
         klass = ip.get_parameter(plugin, 'klass')
         if klass is None and mode == 'client':
             klass = 'PychronLaserManager'
-            pkg = 'pychron.lasers.laser_managers.api'
+            pkg = 'pychron.lasers.laser_managers.pychron_laser_manager'
             factory = __import__(pkg, fromlist=[klass])
             klassfactory = getattr(factory, klass)
         else:
@@ -119,10 +121,10 @@ class BaseLaserPlugin(BaseTaskPlugin):
                             params[attr] = v
                         else:
                             self.debug('No communications attribute {}'.format(attr))
-                    except Exception, e:
-                        print 'client comms fail a', attr, e
-            except Exception, e:
-                print 'client comms fail b', e
+                    except Exception as e:
+                        print('client comms fail a', attr, e)
+            except Exception as e:
+                print('client comms fail b', e)
 
         m = klassfactory(**params)
         m.mode = mode
@@ -172,15 +174,16 @@ class FusionsPlugin(BaseLaserPlugin):
                             name=self.task_name,
                             image='laser',
                             accelerator=self.accelerator),
-                TaskFactory(id='pychron.laser.calibration',
-                            task_group='hardware',
-                            factory=self._calibration_task_factory,
-                            name='Laser Calibration',
-                            accelerator='Ctrl+Shift+2')]
+                # TaskFactory(id='pychron.laser.calibration',
+                #             task_group='hardware',
+                #             factory=self._calibration_task_factory,
+                #             name='Laser Calibration',
+                #             accelerator='Ctrl+Shift+2')
+                ]
 
-    def _calibration_task_factory(self):
-        t = LaserCalibrationTask(manager=self._get_manager())
-        return t
+    # def _calibration_task_factory(self):
+    #     t = LaserCalibrationTask(manager=self._get_manager())
+    #     return t
 
     sources = List(contributes_to='pychron.video.sources')
 

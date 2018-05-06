@@ -16,6 +16,8 @@
 
 # ============= enthought library imports =======================
 
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import time
 from datetime import datetime, timedelta
@@ -30,6 +32,7 @@ from traitsui.api import View, Item, EnumEditor, CheckListEditor
 from pychron.globals import globalv
 from pychron.pipeline.nodes.base import BaseNode
 from pychron.pychron_constants import ANALYSIS_TYPES
+import six
 
 
 class DVCNode(BaseNode):
@@ -45,7 +48,7 @@ class DVCNode(BaseNode):
         from pychron.envisage.browser.view import BrowserView
 
         self.browser_model.activated()
-        self.browser_model.do_filter()
+        # self.browser_model.do_filter()
 
         if irradiation:
             self.browser_model.irradiation_enabled = True
@@ -121,7 +124,8 @@ class DataNode(DVCNode):
     check_reviewed = Bool(False)
 
     def configure(self, pre_run=False, **kw):
-        if pre_run and getattr(self, self.analysis_kind):
+        print(self, pre_run, getattr(self, self.analysis_kind), self.index)
+        if pre_run and getattr(self, self.analysis_kind) and self.index == 0:
             return True
 
         if not pre_run:
@@ -206,26 +210,26 @@ class UnknownNode(DataNode):
         #         state.canceled = True
         #         return
 
-        review_req = []
-        unks = self.unknowns
-        for ai in unks:
-            ai.group_id = 0
-            if self.check_reviewed:
-                for attr in ('blanks', 'iso_evo'):
-                    # check analyses to see if they have been reviewed
-                    if attr not in review_req:
-                        if not self.dvc.analysis_has_review(ai, attr):
-                            review_req.append(attr)
-
-        if review_req:
-            information(None, 'The current data set has been '
-                              'analyzed and requires {}'.format(','.join(review_req)))
+        # review_req = []
+        # unks = self.unknowns
+        # for ai in unks:
+        #     ai.group_id = 0
+        #     if self.check_reviewed:
+        #         for attr in ('blanks', 'iso_evo'):
+        #             # check analyses to see if they have been reviewed
+        #             if attr not in review_req:
+        #                 if not self.dvc.analysis_has_review(ai, attr):
+        #                     review_req.append(attr)
+        #
+        # if review_req:
+        #     information(None, 'The current data set has been '
+        #                       'analyzed and requires {}'.format(','.join(review_req)))
 
         # add our analyses to the state
         items = getattr(state, self.analysis_kind)
         items.extend(self.unknowns)
 
-        state.projects = {ai.project for ai in state.unknowns}
+        state.projects = {ai.project for ai in state.unknowns if hasattr(ai, 'project')}
 
 
 class ReferenceNode(DataNode):
@@ -312,12 +316,12 @@ class BaseAutoUnknownNode(UnknownNode):
             if not self.single_shot:
                 self._start_listening()
 
-            self._post_run_hook()
+            self._post_run_hook(engine, state)
 
     def reset(self):
         self._stop_listening()
 
-    def _post_run_hook(self):
+    def _post_run_hook(self, engine, state):
         pass
 
     def _finish_load_hook(self):
@@ -349,17 +353,18 @@ class BaseAutoUnknownNode(UnknownNode):
         with self.dvc.session_ctx(use_parent_session=False):
             ats = [a.lower().replace(' ', '_') for a in self.analysis_types]
 
-            print 'low={}'.format(low)
-            print 'high={}'.format(high)
-            print 'ats={}'.format(ats)
-            print 'ms={}'.format(self.mass_spectrometer)
+            print('low={}'.format(low))
+            print('high={}'.format(high))
+            print('ats={}'.format(ats))
+            print('ms={}'.format(self.mass_spectrometer))
             unks = self.dvc.get_analyses_by_date_range(low, high,
                                                        analysis_types=ats,
                                                        mass_spectrometers=self.mass_spectrometer, verbose=self.verbose)
             records = [ri for unk in unks for ri in unk.record_views]
 
-            print 'retrived n records={}'.format(len(records))
+            print('retrived n records={}'.format(len(records)))
             if not self._cached_unknowns:
+                updated = True
                 ans = self.dvc.make_analyses(records)
             else:
                 ans = []
@@ -401,7 +406,7 @@ class CalendarUnknownNode(BaseAutoUnknownNode):
     def _run_time_default(self):
         return (datetime.now() + timedelta(minutes=2)).time()
 
-    def _post_run_hook(self):
+    def _post_run_hook(self, engine, state):
         self._flash_iter(0)
 
     def _flash_iter(self, cnt):
@@ -420,10 +425,10 @@ class CalendarUnknownNode(BaseAutoUnknownNode):
             return
 
         now = datetime.now()
-        print 'now={} run_time={}. hourmatch={}, minutematch={} ran={}'.format(now, self.run_time,
+        print('now={} run_time={}. hourmatch={}, minutematch={} ran={}'.format(now, self.run_time,
                                                                                now.hour >= self.run_time.hour,
                                                                                now.minute >= self.run_time.minute,
-                                                                               self._ran)
+                                                                               self._ran))
         if now.hour >= self.run_time.hour:
             if now.minute >= self.run_time.minute:
                 if not self._ran:
@@ -431,7 +436,7 @@ class CalendarUnknownNode(BaseAutoUnknownNode):
                     unks, updated = self._load_analyses()
                     if not self._alive:
                         return
-                    print 'updated={} loaded unks={}'.format(updated, unks)
+                    print('updated={} loaded unks={}'.format(updated, unks))
 
                     if unks:
                         self.engine.rerun_with(unks, post_run=False)
@@ -468,6 +473,23 @@ class ListenUnknownNode(BaseAutoUnknownNode):
 
     max_period = 10
     _between_updates = None
+    pipeline = None
+    state = None
+
+    def clear_data(self):
+        super(ListenUnknownNode, self).clear_data()
+        self.pipeline = None
+        self.state = None
+
+    def reset(self):
+        super(ListenUnknownNode, self).reset()
+        self.pipeline = None
+        self.state = None
+
+    def _post_run_hook(self, engine, state):
+        self.state = state
+        self.pipeline = engine.pipeline
+        engine.pipeline.active = True
 
     def configure(self, pre_run=False, *args, **kw):
         if pre_run:
@@ -494,9 +516,10 @@ class ListenUnknownNode(BaseAutoUnknownNode):
         return v
 
     def run(self, state):
-        self._low = datetime.now()
-        unks, updated = self._load_analyses()
-        state.unknowns = unks
+        if not self._alive:
+            self._low = datetime.now()
+            unks, updated = self._load_analyses()
+            state.unknowns = unks
 
     def _finish_load_hook(self):
         if globalv.auto_pipeline_debug:
@@ -512,13 +535,17 @@ class ListenUnknownNode(BaseAutoUnknownNode):
         if not self._alive:
             return
 
-        if unks:
-            unks_ids = [id(ai) for ai in unks]
-            if self._unks_ids != unks_ids:
-                # self.unknowns = unks
-                self._unks_ids = unks_ids
-                self.engine.rerun_with(unks, post_run=False)
-                self.engine.refresh_figure_editors()
+        if updated:
+            # unks_ids = [id(ai) for ai in unks]
+            # if self._unks_ids != unks_ids:
+            #     self._unks_ids = unks_ids
+            # self.engine.rerun_with(unks, post_run=False)
+            self.state.unknowns = unks
+            self.engine.run(post_run=False, pipeline=self.pipeline, state=self.state)
+
+            self.engine.post_run_refresh(state=self.state)
+            self.engine.refresh_figure_editors()
+            # self.unknowns = unks
 
         if not self._alive:
             return

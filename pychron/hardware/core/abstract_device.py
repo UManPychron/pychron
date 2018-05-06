@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # =============enthought library imports=======================
+from __future__ import absolute_import
 from traits.api import Property, DelegatesTo, Instance, provides, CStr
 # =============standard library imports ========================
 # =============local library imports  ==========================
@@ -57,7 +58,8 @@ class AbstractDevice(ScanableDevice, ConfigLoadable, HasCommunicator):
         #     else:
         factory = self.get_factory(PACKAGES[cklass], cklass)
         # self.debug('constructing cdevice: name={}, klass={}'.format(name, klass))
-        self._cdevice = factory(name=cklass, configuration_dir_name=self.configuration_dir_name)
+        self._cdevice = factory(name=cklass, application=self.application,
+                                configuration_dir_name=self.configuration_dir_name)
         return True
 
     @property
@@ -70,7 +72,7 @@ class AbstractDevice(ScanableDevice, ConfigLoadable, HasCommunicator):
             if hasattr(module, klass):
                 factory = getattr(module, klass)
                 return factory
-        except ImportError, e:
+        except ImportError as e:
             self.warning(e)
 
     def close(self):

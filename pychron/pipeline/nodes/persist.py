@@ -15,16 +15,26 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
-import os
+from __future__ import absolute_import
+from __future__ import print_function
 
-from traits.api import Str, Instance, List
-from traitsui.api import Item
-from traitsui.editors import DirectoryEditor, CheckListEditor
+import csv
+import os
+from itertools import groupby
+
+from pyface.message_dialog import information
+from traits.api import Str, Instance, List, HasTraits, Bool, Float, Int, Button
+from traitsui.api import Item, UItem, VGroup, HGroup, View
+from traitsui.editors import DirectoryEditor, CheckListEditor, TableEditor
+from traitsui.extras.checkbox_column import CheckboxColumn
+from traitsui.table_column import ObjectColumn
 from uncertainties import ufloat, std_dev, nominal_value
 
 from pychron.core.confirmation import confirmation_dialog
 from pychron.core.helpers.filetools import add_extension, unique_path2, view_file
+from pychron.core.helpers.isotope_utils import sort_isotopes
 from pychron.core.progress import progress_iterator
+from pychron.core.ui.preference_binding import bind_preference
 from pychron.core.ui.strings import SpacelessStr
 from pychron.paths import paths
 from pychron.pipeline.nodes.base import BaseNode
@@ -32,8 +42,14 @@ from pychron.pipeline.nodes.figure import FigureNode
 from pychron.pipeline.nodes.persist_options import InterpretedAgePersistOptionsView, InterpretedAgePersistOptions
 from pychron.pipeline.plot.editors.figure_editor import FigureEditor
 from pychron.pipeline.plot.editors.interpreted_age_editor import InterpretedAgeEditor
+from pychron.pipeline.state import get_isotope_set
+from pychron.pipeline.tables.xlsx_table_options import XLSXTableWriterOptions
 from pychron.pipeline.tables.xlsx_table_writer import XLSXTableWriter
 from pychron.pipeline.tasks.interpreted_age_factory import set_interpreted_age
+from six.moves import zip
+
+from pychron.processing.analyses.analysis import EXTRACTION_ATTRS, META_ATTRS
+from pychron.processing.analyses.analysis_group import InterpretedAgeGroup
 
 
 class PersistNode(BaseNode):
@@ -70,7 +86,7 @@ class PDFFigureNode(PDFNode):
     def run(self, state):
         for ei in state.editors:
             if hasattr(ei, 'save_file'):
-                print 'save file to', self._generate_path(ei)
+                print('save file to', self._generate_path(ei))
                 ei.save_file(self._generate_path(ei))
 
 
@@ -224,94 +240,234 @@ class FluxPersistNode(DVCPersistNode):
 
 class XLSXTablePersistNode(BaseNode):
     name = 'Save Analysis Table'
-    auto_configure = False
-    configurable = False
+    # auto_configure = False
+    # configurable = False
+
+    options_klass = XLSXTableWriterOptions
+
+    def _finish_configure(self):
+        self.options.dump()
 
     def run(self, state):
-        for table in state.tables:
-            writer = XLSXTableWriter()
-            writer.build(**table)
+        bind_preference(self, 'skip_meaning', 'pychron.pipeline.skip_meaning')
+
+        key = lambda x: x.group_id
+
+        skip_meaning = self.skip_meaning
+        options = self.options
+
+        if options.table_kind == 'Step Heat':
+            def factory(ans, tag='Human Table'):
+                if skip_meaning:
+                    if tag in skip_meaning:
+                        ans = (ai for ai in ans if ai.tag.lower() != 'skip')
+
+                return InterpretedAgeGroup(analyses=list(ans),
+                                           plateau_nsteps=options.plateau_nsteps,
+                                           plateau_gas_fraction=options.plateau_gas_fraction,
+                                           fixed_step_low=options.fixed_step_low,
+                                           fixed_step_high=options.fixed_step_high
+                                           )
+
+        else:
+            def factory(ans, tag='Human Table'):
+                if self.skip_meaning:
+                    if tag in skip_meaning:
+                        ans = (ai for ai in ans if ai.tag.lower() != 'skip')
+
+                return InterpretedAgeGroup(analyses=list(ans))
+
+        unknowns = list(a for a in state.unknowns if a.analysis_type == 'unknown')
+        blanks = (a for a in state.unknowns if a.analysis_type == 'blank_unknown')
+        airs = (a for a in state.unknowns if a.analysis_type == 'air')
+
+        unk_group = [factory(analyses) for _, analyses in groupby(sorted(unknowns, key=key), key=key)]
+        blank_group = [factory(analyses) for _, analyses in groupby(sorted(blanks, key=key), key=key)]
+        air_group = [factory(analyses) for _, analyses in groupby(sorted(airs, key=key), key=key)]
+        munk_group = [factory(analyses, 'Machine Table') for _, analyses in groupby(sorted(unknowns, key=key), key=key)]
+
+        groups = {'unknowns': unk_group,
+                  'blanks': blank_group,
+                  'airs': air_group,
+                  'machine_unknowns': munk_group}
+        writer = XLSXTableWriter()
+
+        for gs in groups.values():
+            for gi in gs:
+                gi.trait_set(plateau_nsteps=options.plateau_nsteps,
+                             plateau_gas_fraction=options.plateau_gas_fraction,
+                             fixed_step_low=options.fixed_step_low,
+                             fixed_step_high=options.fixed_step_high)
+
+        writer.build(groups, options=options)
+
+
+class Isot(HasTraits):
+    name = Str
+    intercept_enabled = Bool(True)
+    baseline_enabled = Bool(True)
+    blank_enabled = Bool(True)
+    bs_corrected_enabled = Bool(True)
+    bl_corrected_enabled = Bool(True)
+    ic_corrected_enabled = Bool(True)
+    detector_enabled = Bool(True)
+
+    def values(self):
+        return (('{}_{}'.format(self.name, tag), getattr(self, '{}_enabled'.format(tag)))
+                for tag in ('detector', 'intercept', 'blank', 'baseline', 'bs_corrected',
+                            'bl_corrected', 'ic_corrected'))
 
 
 class CSVAnalysesExportNode(BaseNode):
     name = 'Save CSV'
     pathname = SpacelessStr
-    available_attributes = List(['record_id',
-                                 'mass_spectrometer',
-                                 'intercepts'])
-    selected_attributes = List(['record_id',
-                                'mass_spectrometer',
-                                'intercepts'])
+    available_meta_attributes = List
+    selected_meta_attributes = List
+
+    available_isotopes = List
+    available_ratios = List
+
+    select_all_meta = Button('Select All')
+    unselect_all_meta = Button('Unselect All')
 
     def traits_view(self):
-        return self._view_factory(Item('pathname'),
-                                  Item('selected_attributes',
-                                       style='custom',
-                                       editor=CheckListEditor(cols=4,
-                                                              name='available_attributes'),
-                                       width=200))
+        cols = [ObjectColumn(name='name', editable=False),
+                CheckboxColumn(name='detector_enabled', label='Detector'),
+                CheckboxColumn(name='intercept_enabled', label='Intercept'),
+                CheckboxColumn(name='baseline_enabled', label='Baseline'),
+                CheckboxColumn(name='blank_enabled', label='Blank'),
+                CheckboxColumn(name='bs_corrected_enabled', label='Baseline Corrected'),
+                CheckboxColumn(name='bl_corrected_enabled', label='Blank Corrected'),
+                CheckboxColumn(name='ic_corrected_enabled', label='IC Corrected')]
+
+        pgrp = HGroup(Item('pathname', springy=True, label='File Name'),
+                      show_border=True)
+        mgrp = VGroup(HGroup(UItem('select_all_meta'),
+                             UItem('unselect_all_meta')),
+                      UItem('selected_meta_attributes',
+                            style='custom',
+                            editor=CheckListEditor(cols=4,
+                                                   name='available_meta_attributes'),
+                            width=200),
+                      show_border=True)
+        igrp = VGroup(UItem('available_isotopes',
+                            editor=TableEditor(columns=cols, sortable=False)),
+                      show_border=True)
+
+        return self._view_factory(VGroup(pgrp, mgrp, igrp))
 
     def run(self, state):
-        import csv
-        p = os.path.join(paths.data_dir, add_extension(self.pathname, '.csv'))
+        p = os.path.join(paths.csv_data_dir, add_extension(self.pathname, '.csv'))
 
         with open(p, 'w') as wfile:
             writer = csv.writer(wfile)
             for ans in (state.unknowns, state.references):
                 if ans:
-                    header = self._get_header(ans[0])
+                    header = self._get_header()
                     writer.writerow(header)
                     for ai in ans:
                         row = self._get_row(header, ai)
                         writer.writerow(row)
 
-    def _get_header(self, ai):
-        header = []
-        for attr in self.selected_attributes:
-            if attr == 'intercepts':
-                for k in ai.isotope_keys:
-                    k = 'intercept{}.({})'.format(k, ai.isotopes[k].detector)
-                    ke = 'error'
-                    header.append(k)
-                    header.append(ke)
-            else:
-                header.append(attr)
+            if confirmation_dialog('File saved to {}\n\nWould you like to open?'.format(p)):
+                view_file(p, application='Excel')
+
+    def _configure_hook(self):
+        if self.unknowns or self.references:
+            uisokeys = get_isotope_set(self.unknowns)
+            risokeys = get_isotope_set(self.references)
+            isokeys = list(uisokeys.union(risokeys))
+            self.available_isotopes = [Isot(name=i) for i in sort_isotopes(isokeys)]
+            # if self.unknowns:
+            #     ref = self.unknowns[0]
+            # else:
+            #     ref = self.references[0]
+        temps = ('lab_temperature', 'east_diffuser_temperature', 'east_return_temperature', 'outside_temperature')
+        self.available_meta_attributes = list(('rundate', 'timestamp') + META_ATTRS + EXTRACTION_ATTRS + temps)
+        self._select_all_meta_fired()
+
+    def _unselect_all_meta_fired(self):
+        self.selected_meta_attributes = []
+
+    def _select_all_meta_fired(self):
+        self.selected_meta_attributes = self.available_meta_attributes
+
+    def _get_header(self):
+        header = self.selected_meta_attributes[:]
+
+        vargs = [], [], [], [], [], [], []
+        for i in self.available_isotopes:
+            for vs, (name, enabled) in zip(vargs, i.values()):
+                if enabled:
+                    vs.append(name)
+                    if not name.endswith('detector'):
+                        vs.append('error')
+
+        for va in vargs:
+            header.extend(va)
 
         return header
 
     def _get_row(self, header, ai):
+
+        def get_intercept(iso):
+            return iso.uvalue
+
+        def get_baseline_corrected(iso):
+            return iso.get_baseline_corrected_value()
+
+        def get_blank(iso):
+            return iso.blank.uvalue
+
+        def get_baseline(iso):
+            return iso.baseline.uvalue
+
+        def get_blank_corrected(iso):
+            return iso.get_non_detector_corrected_value()
+
+        def get_ic_corrected(iso):
+            return iso.get_ic_corrected_value()
 
         row = []
         for attr in header:
             if attr == 'error':
                 continue
 
-            if attr.startswith('intercept'):
-                attr = attr[9:]
-                iso, det = attr.split('.')
-                det = det[1:-1]
-                iso = ai.get_isotope(iso, detector=det)
-                vs = ('', '')
-                if iso is not None:
-                    v = iso.get_baseline_corrected_value()
-                    vs = (nominal_value(v), std_dev(v))
-                row.extend(vs)
-            elif attr.startswith('detector'):
-                iso = ai.get_isotope(attr[8:])
-                det = ''
-                if iso is not None:
-                    det = iso.detector
-                row.append(det)
-            else:
-                try:
-                    if attr.endswith('err'):
-                        v = std_dev(ai.get_value(attr[-3:]))
-                    else:
-                        v = nominal_value(ai.get_value(attr))
-                except BaseException:
-                    v = ''
+            for tag, func in (('intercept', get_intercept),
+                              ('blank', get_blank),
+                              ('baseline', get_baseline),
+                              ('bs_corrected', get_baseline_corrected),
+                              ('bl_corrected', get_blank_corrected),
+                              ('ic_corrected', get_ic_corrected)):
+                if attr.endswith(tag):
+                    # iso = attr[:len(tag) + 1]
+                    args = attr.split('_')
+                    iso = ai.get_isotope(args[0])
+                    vs = ('', '')
+                    if iso is not None:
+                        v = func(iso)
+                        vs = nominal_value(v), std_dev(v)
 
-                row.append(v)
+                    row.extend(vs)
+                    break
+            else:
+                if attr.endswith('detector'):
+                    args = attr.split('_')
+                    iso = ai.get_isotope(args[0])
+                    det = ''
+                    if iso is not None:
+                        det = iso.detector
+                    row.append(det)
+                else:
+                    try:
+                        # if attr.endswith('err'):
+                        #     v = std_dev(ai.get_value(attr[-3:]))
+                        # else:
+                        v = nominal_value(ai.get_value(attr))
+                    except BaseException:
+                        v = ''
+
+                    row.append(v)
 
         return row
 

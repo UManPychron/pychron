@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from traits.api import Property, Dict, Float, Any, Instance
 from traitsui.api import View, VGroup, Item, RangeEditor
 # from pyface.timer.api import Timer
@@ -54,7 +55,6 @@ class TargetPositionError(BaseException):
 
 class ZeroDisplacementException(BaseException):
     pass
-
 
 
 class MotionController(CoreDevice):
@@ -135,11 +135,15 @@ class MotionController(CoreDevice):
 
     @caller
     def set_z(self, v, **kw):
+        if v != self._z_position:
+            self.single_axis_move('z', v, **kw)
+            #        setattr(self, '_{}_position'.format('z'), v)
+            self._z_position = v
+            self.axes['z'].position = v
 
-        self.single_axis_move('z', v, **kw)
-        #        setattr(self, '_{}_position'.format('z'), v)
-        self._z_position = v
-        self.axes['z'].position = v
+    def in_motion(self):
+        if self.timer:
+            return self.timer.isActive()
 
     def moving(self, *args, **kw):
         return self._moving(*args, **kw)
@@ -231,7 +235,11 @@ class MotionController(CoreDevice):
             return
 
         c = getattr(self, '_{}_position'.format(name))
+
         disp = abs(c - v)
+        if c == v or disp < 0.001:
+            return
+
         self.debug('set axis {} to {}. current pos={}'.format(name, v, c))
         self.single_axis_move(name, v, update=disp > 4, **kw)
 
@@ -240,7 +248,7 @@ class MotionController(CoreDevice):
         if disp <= 4:
             self.parent.canvas.clear_desired_position()
 
-    def _moving(self):
+    def _moving(self, *args, **kw):
         pass
 
     def _z_inprogress_update(self):
@@ -252,7 +260,7 @@ class MotionController(CoreDevice):
         z = self.get_current_position('z')
         self.z_progress = z
 
-    def _check_moving(self, axis=None, verbose=False):
+    def _check_moving(self, axis=None, verbose=True):
         m = self._moving(axis=axis, verbose=verbose)
         if verbose:
             self.debug('is moving={}'.format(m))
@@ -263,7 +271,7 @@ class MotionController(CoreDevice):
         else:
             self._not_moving_count = 0
 
-        if self._not_moving_count > 1:
+        if self._not_moving_count > 2:
             if verbose:
                 self.debug('not moving cnt={}'.format(self._not_moving_count))
             self._not_moving_count = 0
@@ -340,20 +348,22 @@ class MotionController(CoreDevice):
             event.clear()
 
         timer = self.timer
+        period = 0.1
+
         if timer is not None:
-            def timerActive():
+            self.debug('using existing timer')
+
+            def func():
                 return self.timer.isActive()
-
-            func = timerActive
-            period = 0.05
         else:
-            def moving():
-                return self._moving(axis=axis)
+            self.debug('check moving={}'.format(axis))
 
-            func = moving
-            period = 0.1
+            def func():
+                return self._moving(axis=axis, verbose=False)
 
         i = 0
+        cnt = 0
+        threshold = 5
         # fn = func.func_name
         # n = 10
         while 1:
@@ -365,7 +375,11 @@ class MotionController(CoreDevice):
             if i > 100:
                 i = 0
             if not a:
-                break
+                if cnt > threshold:
+                    break
+                cnt += 1
+            else:
+                cnt = 0
             i += 1
 
         self.debug('block finished')
@@ -421,10 +435,10 @@ class MotionController(CoreDevice):
             if not mi <= v <= ma:
                 self.debug('value not between {}, {}'.format(mi, ma))
                 v = None
-            #
-            # if v is not None:
-            #     if abs(v - cur) <= 0.001:
-            #         v = None
+                #
+                # if v is not None:
+                #     if abs(v - cur) <= 0.001:
+                #         v = None
         except ValueError:
             v = None
 
@@ -449,10 +463,10 @@ class MotionController(CoreDevice):
         return self._get_negative_limit('z')
 
     def _get_positive_limit(self, key):
-        return self.axes[key].positive_limit if self.axes.has_key(key) else 0
+        return self.axes[key].positive_limit if key in self.axes else 0
 
     def _get_negative_limit(self, key):
-        return self.axes[key].negative_limit if self.axes.has_key(key) else 0
+        return self.axes[key].negative_limit if key in self.axes else 0
 
     # ===============================================================================
     # view
@@ -467,7 +481,7 @@ class MotionController(CoreDevice):
         g = VGroup(show_border=True,
                    label='Axes')
 
-        keys = self.axes.keys()
+        keys = list(self.axes.keys())
         keys.sort()
         for k in keys:
 

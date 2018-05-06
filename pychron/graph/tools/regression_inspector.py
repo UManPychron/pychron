@@ -15,9 +15,12 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from pychron.core.helpers.formatting import floatfmt, format_percent_error
 from pychron.core.regression.mean_regressor import MeanRegressor
 from pychron.graph.tools.info_inspector import InfoInspector, InfoOverlay
+from six.moves import map
+import six
 
 
 # ============= standard library imports ========================
@@ -32,16 +35,15 @@ class RegressionInspectorTool(InfoInspector):
 
             v, e = reg.predict(0), reg.predict_error(0)
             x = self.current_position[0]
-            vv,ee = reg.predict(x), reg.predict_error(x)
+            vv, ee = reg.predict(x), reg.predict_error(x)
 
             lines = [reg.make_equation(),
                      'x=0, y={} +/-{}({}%)'.format(floatfmt(v, n=9),
                                                    floatfmt(e, n=9),
                                                    format_percent_error(v, e)),
                      'x={}, y={} +/-{}({}%)'.format(x, floatfmt(vv, n=9),
-                                                   floatfmt(ee, n=9),
-                                                   format_percent_error(vv, ee)),
-                     ]
+                                                    floatfmt(ee, n=9),
+                                                    format_percent_error(vv, ee))]
 
             if reg.mswd not in ('NaN', None):
                 valid = '' if reg.valid_mswd else '*'
@@ -49,12 +51,13 @@ class RegressionInspectorTool(InfoInspector):
                                                        floatfmt(reg.mswd, n=3), reg.n))
 
             mi, ma = reg.min, reg.max
-            lines.append('Min={}, Max={}, D={}%'.format(floatfmt(mi), floatfmt(ma), floatfmt((ma - mi) / float(ma) * 100)))
+            lines.append('Min={}, Max={}, D={}%'.format(floatfmt(mi),
+                                                        floatfmt(ma), floatfmt((ma - mi) / ma * 100)))
 
             lines.append('Mean={}, SD={}, SEM={}, N={}'.format(floatfmt(reg.mean), floatfmt(reg.std),
                                                                floatfmt(reg.sem), reg.n))
-
-            lines.extend(map(unicode.strip, map(unicode, reg.tostring().split(','))))
+            lines.append('R2={}, R2-Adj.={}'.format(floatfmt(reg.rsquared), floatfmt(reg.rsquared_adj)))
+            lines.extend([l.strip() for l in reg.tostring().split(',')])
 
         return lines
 

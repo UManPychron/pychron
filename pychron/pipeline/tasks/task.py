@@ -15,6 +15,8 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 from itertools import groupby
 
@@ -37,6 +39,7 @@ from pychron.pipeline.engine import PipelineEngine
 from pychron.pipeline.plot.editors.figure_editor import FigureEditor
 from pychron.pipeline.plot.editors.interpreted_age_editor import InterpretedAgeEditor
 from pychron.pipeline.save_figure import SaveFigureView, SaveFigureModel
+from pychron.pipeline.script import DataReductionScript
 from pychron.pipeline.state import EngineState
 from pychron.pipeline.tasks.actions import RunAction, ResumeAction, ResetAction, \
     ConfigureRecallAction, TagAction, SetInterpretedAgeAction, ClearAction, SavePDFAction, SetInvalidAction, \
@@ -45,8 +48,9 @@ from pychron.pipeline.tasks.actions import RunAction, ResumeAction, ResetAction,
     InverseIsochronAction, LoadReviewStatusAction, DiffViewAction
 from pychron.pipeline.tasks.interpreted_age_factory import InterpretedAgeFactoryView, \
     InterpretedAgeFactoryModel, set_interpreted_age
-from pychron.pipeline.tasks.panes import PipelinePane, AnalysesPane
+from pychron.pipeline.tasks.panes import PipelinePane, AnalysesPane, RepositoryPane
 from pychron.pipeline.tasks.select_repo import SelectExperimentIDView
+import six
 
 
 class DataMenu(SMenu):
@@ -65,38 +69,41 @@ def select_experiment_repo():
 class PipelineTask(BaseBrowserTask):
     name = 'Pipeline Data Processing'
     engine = Instance(PipelineEngine)
-    tool_bars = [SToolBar(PipelineRecallAction(),
-                          IdeogramAction(),
-                          SpectrumAction(),
-                          InverseIsochronAction()),
+    tool_bars = [
 
-                 SToolBar(ConfigureRecallAction()),
-                 SToolBar(RunAction(),
-                          ResumeAction(),
-                          RunFromAction(),
-                          ResetAction(),
-                          ClearAction(),
-                          # SavePipelineTemplateAction(),
-                          name='Pipeline'),
-                 SToolBar(SavePDFAction(),
-                          # SaveFigureAction(),
-                          name='Save'),
-                 SToolBar(EditAnalysisAction(),
-                          name='Edit'),
-                 SToolBar(LoadReviewStatusAction(),
-                          DiffViewAction(),
-                          name='View'),
-                 # SToolBar(GitRollbackAction(), label='Git Toolbar'),
-                 SToolBar(TagAction(),
-                          SetInvalidAction(),
-                          SetFilteringTagAction(),
-                          SetInterpretedAgeAction(),
-                          # TabularViewAction(),
-                          name='Misc')]
+        # SToolBar(PipelineRecallAction(),
+        #               IdeogramAction(),
+        #               SpectrumAction(),
+        #               InverseIsochronAction()),
+
+        SToolBar(PipelineRecallAction(),
+                 ConfigureRecallAction()),
+        SToolBar(RunAction(),
+                 ResumeAction(),
+                 RunFromAction(),
+                 ResetAction(),
+                 ClearAction(),
+                 # SavePipelineTemplateAction(),
+                 name='Pipeline'),
+        SToolBar(SavePDFAction(),
+                 # SaveFigureAction(),
+                 name='Save'),
+        SToolBar(EditAnalysisAction(),
+                 name='Edit'),
+        SToolBar(LoadReviewStatusAction(),
+                 DiffViewAction(),
+                 name='View'),
+        # SToolBar(GitRollbackAction(), label='Git Toolbar'),
+        SToolBar(TagAction(),
+                 SetInvalidAction(),
+                 SetFilteringTagAction(),
+                 SetInterpretedAgeAction(),
+                 # TabularViewAction(),
+                 name='Misc')]
 
     state = Instance(EngineState)
-    resume_enabled = Bool(False)
-    run_enabled = Bool(True)
+    # resume_enabled = Bool(False)
+    # run_enabled = Bool(True)
     set_interpreted_enabled = Bool(False)
     # run_to = None
 
@@ -106,17 +113,15 @@ class PipelineTask(BaseBrowserTask):
     diff_enabled = Bool
 
     def activated(self):
+        self.debug('activating pipeline')
         super(PipelineTask, self).activated()
-
-        if self.application.get_plugin('pychron.mass_spec.plugin'):
-            self.diff_enabled = True
 
         self.engine.dvc = self.dvc
         self.browser_model.dvc = self.dvc
+        self.browser_model.analysis_table.dvc = self.dvc
+
         self.engine.browser_model = self.browser_model
         self.engine.interpreted_age_browser_model = self.interpreted_age_browser_model
-
-        # self.engine.add_data()
 
     def _debug(self):
         self.engine.add_data()
@@ -137,11 +142,19 @@ class PipelineTask(BaseBrowserTask):
     def create_dock_panes(self):
         panes = [PipelinePane(model=self.engine),
                  AnalysesPane(model=self.engine),
+                 RepositoryPane(model=self.engine)
                  # InspectorPane(model=self.engine)
                  ]
         return panes
 
     # toolbar actions
+    def run_script(self):
+        path = self.open_file_dialog()
+        if path is not None:
+            script = DataReductionScript()
+            script.dvc = self.dvc
+            script.run(path)
+
     def diff_analysis(self):
         self.debug('diff analysis')
         if not self.has_active_editor():
@@ -182,6 +195,8 @@ class PipelineTask(BaseBrowserTask):
             if self._browser_info.control:
                 self._browser_info.control.raise_()
                 return
+
+        self.dvc.create_session(force=True)
 
         self.browser_model.activated()
         browser_view = BrowserView(show_append_replace_buttons=False,
@@ -229,48 +244,25 @@ class PipelineTask(BaseBrowserTask):
                     self.warning_dialog('No analyses selected to Tag')
                 return
 
+        note = ''
         if items:
             if tag is None:
                 a = self._get_tagname(items)
                 if a:
-                    tag, items, use_filter = a
+                    tag, items, use_filter, note = a
 
             # set tags for items
             if tag and items:
                 # tags stored as lowercase
                 tag = tag.lower()
 
-                dvc = self.dvc
-                db = dvc.db
-                key = lambda x: x.repository_identifier
-
-                for expid, ans in groupby(sorted(items, key=key), key=key):
-                    cs = []
-                    for it in ans:
-                        self.debug('setting {} tag= {}'.format(it.record_id, tag))
-                        if not isinstance(it, InterpretedAge):
-                            db.set_analysis_tag(it.uuid, tag)
-
-                        it.set_tag(tag)
-                        if dvc.update_tag(it):
-                            cs.append(it)
-                            # it.refresh_view()
-
-                    if cs:
-                        cc = [c.record_id for c in cs]
-                        if len(cc) > 1:
-                            cstr = '{} - {}'.format(cc[0], cc[-1])
-                        else:
-                            cstr = cc[0]
-                        dvc.repository_commit(expid, '<TAG> {:<6s} {}'.format(tag, cstr))
-                        for ci in cs:
-                            ci.refresh_view()
+                self.dvc.tag_items(tag, items, note)
 
                 if use_filter:
                     for e in self.editor_area.editors:
                         if isinstance(e, FigureEditor):
                             e.set_items([ai for ai in e.analyses if ai.tag != 'invalid'])
-                #
+
                 if self.active_editor:
                     self.active_editor.refresh_needed = True
 
@@ -278,9 +270,6 @@ class PipelineTask(BaseBrowserTask):
                 self.browser_model.analysis_table.remove_invalid()
                 self.browser_model.analysis_table.refresh_needed = True
                 self.engine.refresh_table_needed = True
-                # else:
-                #     # edit tags
-                #     self._get_tagname([])
 
     def set_invalid(self):
         items = self._get_selection()
@@ -303,16 +292,17 @@ class PipelineTask(BaseBrowserTask):
             return
 
         ed = self.active_editor
-        sfm = SaveFigureModel(ed.analyses)
-        sfv = SaveFigureView(model=sfm)
-        info = sfv.edit_traits()
-        if info.result:
-            path = sfm.prepare_path(make=True)
-            save_pdf(ed.component,
-                     path=path,
-                     options=sfm.pdf_options,
-                     # path='/Users/ross/Documents/test.pdf',
-                     view=True)
+        if isinstance(ed, FigureEditor):
+            sfm = SaveFigureModel(ed.analyses)
+            sfv = SaveFigureView(model=sfm)
+            info = sfv.edit_traits()
+            if info.result:
+                path = sfm.prepare_path(make=True)
+                save_pdf(ed.component,
+                         path=path,
+                         options=sfm.pdf_options,
+                         # path='/Users/ross/Documents/test.pdf',
+                         view=True)
 
     def run(self):
         self._run_pipeline()
@@ -339,8 +329,8 @@ class PipelineTask(BaseBrowserTask):
         self.close_all()
 
     def reset(self):
-        self.run_enabled = True
-        self.resume_enabled = False
+        self.engine.run_enabled = True
+        self.engine.resume_enabled = False
         # self._temp_state = None
         # self.state = None
         self.engine.reset()
@@ -385,7 +375,7 @@ class PipelineTask(BaseBrowserTask):
         self._set_action_template('Isochron')
 
     def set_inverse_isochron_template(self):
-        self._set_action_template('Inverse Isochron')
+        self._set_action_template('InverseIsochron')
 
     def set_series_template(self):
         self._set_action_template('Series')
@@ -429,7 +419,7 @@ class PipelineTask(BaseBrowserTask):
         self._set_last_nhours(24 * 7 * 30.5)
 
     def set_analysis_table_template(self):
-        self.engine.selected_pipeline_template = 'Analysis Table'
+        self.engine.selected_pipeline_template = 'Analysis'
         self.run()
 
     # private
@@ -444,21 +434,18 @@ class PipelineTask(BaseBrowserTask):
             self.run()
 
     def _set_action_template(self, name):
+        self.activated()
         self.engine.selected_pipeline_template = name
         self.run()
 
     def _make_save_figure_object(self, editor):
         po = editor.plotter_options
         plotter_options = po.to_dict()
-
-        for k, v in plotter_options.iteritems():
-            print k, v
-        obj = {}
-        obj['plotter_options'] = plotter_options
-        obj['analyses'] = [{'record_id': ai.record_id,
-                            'uuid': ai.uuid,
-                            # 'status': ai.temp_status,
-                            'group_id': ai.group_id} for ai in editor.analyses]
+        obj = {'plotter_options': plotter_options,
+               'analyses': [{'record_id': ai.record_id,
+                             'uuid': ai.uuid,
+                             # 'status': ai.temp_status,
+                             'group_id': ai.group_id} for ai in editor.analyses]}
         return obj
 
     def _close_editor(self, editor):
@@ -468,26 +455,29 @@ class PipelineTask(BaseBrowserTask):
                 break
 
     def _run(self, message, func, close_all=False):
-        self.debug('{} started'.format(message))
-        if close_all:
-            self.close_all()
 
-        self.dvc.db.session = None
-        self.dvc.create_session()
+        if self.engine.pre_run_check(func):
 
-        if not getattr(self.engine, func)():
-            self.resume_enabled = True
-            self.run_enabled = False
-            self.debug('false {} {}'.format(message, func))
-        else:
-            self.run_enabled = True
-            self.resume_enabled = False
-            self.debug('true {} {}'.format(message, func))
+            self.debug('{} started'.format(message))
+            if close_all:
+                self.close_all()
 
-        for editor in self.engine.state.editors:
-            self._open_editor(editor)
+            self.dvc.db.session = None
+            self.dvc.create_session()
 
-        self.debug('{} finished'.format(message))
+            if not getattr(self.engine, func)():
+                self.engine.resume_enabled = True
+                self.engine.run_enabled = False
+                self.debug('false {} {}'.format(message, func))
+            else:
+                self.engine.run_enabled = True
+                self.engine.resume_enabled = False
+                self.debug('true {} {}'.format(message, func))
+
+            for editor in self.engine.state.editors:
+                self._open_editor(editor)
+
+            self.debug('{} finished'.format(message))
 
     def _run_from_pipeline(self):
         self._run('run from', 'run_from_pipeline')
@@ -499,8 +489,8 @@ class PipelineTask(BaseBrowserTask):
         self._run('run pipeline', 'run_pipeline')
 
     def _toggle_run(self, v):
-        self.resume_enabled = v
-        self.run_enabled = not v
+        self.engine.resume_enabled = v
+        self.engine.run_enabled = not v
 
     def _sa_factory(self, path, factory, **kw):
         return SchemaAddition(path=path, factory=factory, **kw)
@@ -514,10 +504,10 @@ class PipelineTask(BaseBrowserTask):
     # defaults
     def _default_layout_default(self):
         return TaskLayout(left=Splitter(Splitter(PaneItem('pychron.pipeline.pane',
-                                                 width=200),
-                                        PaneItem('pychron.pipeline.analyses',
-                                                 width=200)),
-                                        # PaneItem('pychron.pipeline.inspector'),
+                                                          width=200),
+                                                 PaneItem('pychron.pipeline.analyses',
+                                                          width=200)),
+                                        PaneItem('pychron.pipeline.repository'),
                                         orientation='vertical'))
 
     def _extra_actions_default(self):
@@ -597,34 +587,35 @@ class PipelineTask(BaseBrowserTask):
             self._debug()
 
     def _get_selection(self):
-        items = self.engine.selected.unknowns
-        items.extend(self.engine.selected.references)
-        items = [i for i in items if i.temp_selected]
+        if self.engine.selected:
+            items = self.engine.selected.unknowns
+            items.extend(self.engine.selected.references)
+            items = [i for i in items if i.temp_selected]
 
-        uuids = [i.uuid for i in items]
-        for ans in (self.engine.selected_unknowns,
-                    self.engine.selected_references):
-            for i in ans:
-                if i.uuid not in uuids:
-                    items.append(i)
+            uuids = [i.uuid for i in items]
+            for ans in (self.engine.selected_unknowns,
+                        self.engine.selected_references):
+                for i in ans:
+                    if i.uuid not in uuids:
+                        items.append(i)
 
-        # items.extend(self.engine.selected_unknowns)
-        # items.extend(self.engine.selected_references)
+            # items.extend(self.engine.selected_unknowns)
+            # items.extend(self.engine.selected_references)
 
-        return items
+            return items
 
     def _get_tagname(self, items):
         from pychron.pipeline.tagging.analysis_tags import AnalysisTagModel
         from pychron.pipeline.tagging.views import AnalysisTagView
 
-        tv = AnalysisTagView(model=AnalysisTagModel())
+        model = AnalysisTagModel()
+        tv = AnalysisTagView(model=model)
 
         tv.model.items = items
 
         info = tv.edit_traits()
         if info.result:
-            tag = tv.model.tag
-            return tag, tv.model.items, tv.model.use_filter
+            return model.tag, model.get_items(), model.use_filter, model.note
 
     # def _get_dr_tagname(self, items):
     #     from pychron.pipeline.tagging.data_reduction_tags import DataReductionTagModel

@@ -15,10 +15,11 @@
 # ===============================================================================
 
 # =============enthought library imports=======================
+from __future__ import absolute_import
 from traits.api import HasTraits, Property, Float, Enum, Str, Bool, Any
 from uncertainties import ufloat, nominal_value, std_dev
 
-from pychron.pychron_constants import AGE_SCALARS
+from pychron.pychron_constants import AGE_SCALARS, AGE_MA_SCALARS
 
 
 # =============local library imports  ==========================
@@ -86,6 +87,7 @@ class ArArConstants(HasTraits):
 
     age_units = Str('Ma')
     age_scalar = Property(depends_on='age_units')
+    ma_age_scalar = Property(depends_on='age_units')
     abundance_sensitivity = Float
 
     # ic_factors = Either(List, Str)
@@ -100,7 +102,6 @@ class ArArConstants(HasTraits):
     allow_negative_ca_correction = Bool(True)
 
     def __init__(self, *args, **kw):
-        #print 'init arar constants'
         try:
             from pychron.core.ui.preference_binding import bind_preference
             bind_preference(self, 'lambda_b_v', 'pychron.arar.constants.lambda_b')
@@ -173,7 +174,7 @@ class ArArConstants(HasTraits):
     def _get_ufloat(self, attr):
         v = getattr(self, '{}_v'.format(attr))
         e = getattr(self, '{}_e'.format(attr))
-        return ufloat(v, e)
+        return ufloat(v, e, tag=attr)
 
     def _get_atm4036(self):
         return self._get_ufloat('atm4036')
@@ -211,4 +212,8 @@ class ArArConstants(HasTraits):
             return AGE_SCALARS[self.age_units]
         except KeyError:
             return 1
-
+    def _get_ma_age_scalar(self):
+        try:
+            return AGE_MA_SCALARS[self.age_units]
+        except KeyError:
+            return 1

@@ -15,6 +15,12 @@
 # ===============================================================================
 
 # =============enthought library imports=======================
+from __future__ import absolute_import
+from __future__ import print_function
+
+import codecs
+
+import sys
 from traits.api import Float, Property, Bool, Int, CInt, Button
 from traitsui.api import View, Item, HGroup, VGroup, EnumEditor, RangeEditor, \
     spring
@@ -24,13 +30,14 @@ from traitsui.api import View, Item, HGroup, VGroup, EnumEditor, RangeEditor, \
 import struct
 import binascii
 # =============local library imports  ==========================
-from kerr_device import KerrDevice
+from .kerr_device import KerrDevice
 from pychron.hardware.base_linear_drive import BaseLinearDrive
 from pychron.hardware.core.data_helper import make_bitarray
 import time
 from pychron.globals import globalv
 from pychron.core.ui.gui import invoke_in_main_thread
 from pychron.core.ui.qt.progress_editor import ProgressEditor
+from six.moves import map
 # from pyface.progress_dialog import ProgressDialog
 
 SIGN = ['negative', 'positive']
@@ -113,9 +120,9 @@ class KerrMotor(KerrDevice, BaseLinearDrive):
         if self.nominal_position is not None:
             move_to_nominal = True
             if not globalv.ignore_initialization_questions:
-                move_to_nominal = self.confirmation_dialog(
-                    'Would you like to set the {} motor to its nominal pos of {}'.format(self.name.upper(),
-                                                                                         self.nominal_position))
+                msg = 'Would you like to set the {} motor to its nominal pos of {}'.format(self.name.upper(),
+                                                                                           self.nominal_position)
+                move_to_nominal = self.confirmation_dialog(msg)
 
             if move_to_nominal:
                 # move to the home position
@@ -169,7 +176,7 @@ class KerrMotor(KerrDevice, BaseLinearDrive):
 
         cmds.append((addr, cmd, 100, msg))
         if motor_off:
-            cmds.append((addr, '1707', 100, 'Moto ON'))
+            cmds.append((addr, '1707', 100, 'Motor ON'))
 
             # if motor_off:
             # cmds = [(addr, '', 100, )]
@@ -254,7 +261,7 @@ class KerrMotor(KerrDevice, BaseLinearDrive):
         self._initialize_motor(commands, *args, **kw)
 
     def _initialize_motor(self, commands, *args, **kw):
-        self.load_data_position()
+        # self.load_data_position()
 
         self._execute_hex_commands(commands)
 
@@ -313,12 +320,13 @@ class KerrMotor(KerrDevice, BaseLinearDrive):
 
     def _wait_for_home(self, progress=None):
         # wait until homing signal set
-
+        time.sleep(1)
         hbit = 5 if self.home_limit == 1 else 6
         psteps = None
         while 1:
             steps = self.load_data_position(set_pos=False)
-            invoke_in_main_thread(self.trait_set, homing_position=steps)
+            # invoke_in_main_thread(self.trait_set, homing_position=steps)
+            self.homing_position = steps
             status = self.read_defined_status()
 
             if not self._test_status_byte(status, setbits=[7]):
@@ -336,16 +344,15 @@ class KerrMotor(KerrDevice, BaseLinearDrive):
             psteps = steps
 
             time.sleep(0.25)
-        self.debug('wait for home complete')
 
     def _parse_position(self, pos):
         if pos is not None:
-            pos = pos[2:-2]
-            return self._hexstr_to_float(pos)
+            return self._hexstr_to_float(pos[1:-1])
 
     def _test_status_byte(self, status, setbits):
         if status:
-            b = '{:08b}'.format(int(status[:2], 16))
+            # status = binascii.hexlify(status).decode('utf-8')
+            b = '{:08b}'.format(int.from_bytes(status[:1], 'little'))
             bb = [bool(int(b[7 - si])) for si in setbits]
 
             return all(bb)
@@ -355,7 +362,12 @@ class KerrMotor(KerrDevice, BaseLinearDrive):
 
         if status_byte in ('simulation', None):
             status_byte = 'DFDF'
-        status_register = map(int, make_bitarray(int(status_byte[:2], 16)))
+        # else:
+            # status_byte = binascii.hexlify(status_byte).decode('utf-8')
+
+        status_register = list(map(int, make_bitarray(int.from_bytes(status_byte[:1], 'little'))))
+
+        # status_register = list(map(int, make_bitarray(int.from_bytes(status_byte[:1], sys.byteorder))))
         return not status_register[7]
 
     def _clear_bits(self):
@@ -367,16 +379,11 @@ class KerrMotor(KerrDevice, BaseLinearDrive):
         cmd = '13'
         control = '01'
 
-        cmd = ''.join((cmd, control))
+        cmd = '{}{}'.format(cmd, control)
         cmd = (addr, cmd, 100, '')
 
         pos = self._execute_hex_command(cmd, nbytes=6, **kw)
-
-        # trim off status and checksum bits
-        if pos is not None:
-            pos = pos[2:-2]
-            pos = self._hexstr_to_float(pos)
-            return pos
+        return self._parse_position(pos)
 
     def _load_home_control_byte(self):
         """
@@ -392,9 +399,9 @@ class KerrMotor(KerrDevice, BaseLinearDrive):
             6,7=not used- clear to 0
         """
         if self.home_limit == 1:
-            bs = '00010001'
+            bs = '00100001'
         else:
-            bs = '00010010'
+            bs = '00100010'
 
         return int(bs, 2)
 
@@ -510,15 +517,15 @@ class KerrMotor(KerrDevice, BaseLinearDrive):
     def _float_to_hexstr(self, f, endianness='little'):
         f = max(0, f)
         fmt = '%si' % ('<' if endianness == 'little' else '>')
-        return binascii.hexlify(struct.pack(fmt, int(f)))
+        return binascii.hexlify(struct.pack(fmt, int(f))).decode('utf-8')
 
     def _hexstr_to_float(self, h, endianness='little'):
-        # fmt = '%si'.('<' if endianness == 'little' else '>')
+
         fmt = '<i' if endianness == 'little' else '>i'
         try:
-            return struct.unpack(fmt, h.decode('hex'))[0]
-        except Exception, e:
-            print 'exception', e
+            return struct.unpack(fmt, h)[0]
+        except Exception as e:
+            print('exception', e)
 
     def _build_hexstr(self, *hxlist):
         ss = []

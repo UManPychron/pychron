@@ -15,8 +15,9 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from chaco.default_colormaps import color_map_name_dict
-from traits.api import Int, Bool, Float, Property, on_trait_change, Enum, List, Dict, Button
+from traits.api import Int, Bool, Float, Property, on_trait_change, Enum, List, Dict, Button, Str, Color
 
 from pychron.options.aux_plot import AuxPlot
 from pychron.options.group.ideogram_group_options import IdeogramGroupOptions
@@ -38,6 +39,10 @@ class IdeogramOptions(AgeOptions):
     aux_plot_klass = IdeogramAuxPlot
 
     edit_label_format_button = Button
+    edit_mean_format_button = Button
+
+    mean_label_format = Str
+    mean_label_display = Str
     # edit_label_format = Button
     # refresh_asymptotic_button = Button
     index_attrs = Dict(transient=True)
@@ -53,8 +58,14 @@ class IdeogramOptions(AgeOptions):
     display_mean_indicator = Bool(True)
     display_mean = Bool(True)
     display_percent_error = Bool(True)
-    aux_plot_name = 'Ideogram'
+    # display_identifier_on_mean = Bool(False)
+    # display_sample_on_mean = Bool(False)
     label_all_peaks = Bool(True)
+    peak_label_bgcolor = Color
+    peak_label_border = Int
+    peak_label_border_color = Color
+    peak_label_bgcolor_enabled = Bool(False)
+    aux_plot_name = 'Ideogram'
 
     use_asymptotic_limits = Bool
     # asymptotic_width = Float)
@@ -71,7 +82,7 @@ class IdeogramOptions(AgeOptions):
     mean_sig_figs = Int
 
     use_cmap_analysis_number = Bool(False)
-    cmap_analysis_number = Enum(color_map_name_dict.keys())
+    cmap_analysis_number = Enum(list(color_map_name_dict.keys()))
     use_latest_overlay = Bool(False)
 
     group_options_klass = IdeogramGroupOptions
@@ -111,9 +122,9 @@ class IdeogramOptions(AgeOptions):
              'line_color': fg.line_color}
 
         if fg.use_fill:
-            color = fg.color
+            color = fg.color.toRgb()
             color.setAlphaF(fg.alpha * 0.01)
-            d['fill_color'] = fg.color
+            d['fill_color'] = color
             d['type'] = 'filled_line'
         return d
 
@@ -150,8 +161,8 @@ class IdeogramOptions(AgeOptions):
 
     @on_trait_change('use_asymptotic_limits, asymptotic+, use_centered_range, centered_range, use_static_limits')
     def _handle_asymptotic(self, name, new):
-        if name.startswith('use') and not new:
-            return
+        # if name.startswith('use') and not new:
+        #     return
 
         if not self._suppress_xlimits_clear:
             for ap in self.aux_plots:
@@ -170,7 +181,17 @@ class IdeogramOptions(AgeOptions):
         if info.result:
             self.analysis_label_format = lm.formatter
             self.analysis_label_display = lm.label
-            self.refresh_plot_needed = True
+            # self.refresh_plot_needed = True
+
+    def _edit_mean_format_button_fired(self):
+        from pychron.processing.label_maker import MeanLabelTemplater, MeanLabelTemplateView
+
+        lm = MeanLabelTemplater(label=self.mean_label_display)
+        lv = MeanLabelTemplateView(model=lm)
+        info = lv.edit_traits()
+        if info.result:
+            self.mean_label_format = lm.formatter
+            self.mean_label_display = lm.label
 
     def _get_mean_indicator_font(self):
         return '{} {}'.format(self.mean_indicator_fontname,

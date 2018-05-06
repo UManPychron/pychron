@@ -17,6 +17,7 @@
 # ============= enthought library imports =======================
 # ============= standard library imports ========================
 # ============= local library imports  ==========================
+from __future__ import absolute_import
 from pychron.core.helpers.strtools import to_bool
 
 
@@ -108,6 +109,8 @@ class Globals(object):
 
     own_spectrometer = None
 
+    laser_version = 1
+
     def build(self, ip):
 
         for attr, func in [('use_ipc', to_bool),
@@ -149,9 +152,10 @@ class Globals(object):
                            ('irradiation_pdf_debug', to_bool),
                            ('entry_irradiation_import_from_file_debug', to_bool),
                            ('client_only_locking', to_bool),
-                           ('cert_file', str)]:
+                           ('cert_file', str),
+                           ('laser_version', int)]:
             a = ip.get_global(attr)
-            if a:
+            if a is not None:
                 setattr(globalv, attr, func(a))
 
     def _get_test(self):

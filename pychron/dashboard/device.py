@@ -16,6 +16,8 @@
 
 # ============= enthought library imports =======================
 
+from __future__ import absolute_import
+from __future__ import print_function
 from traits.api import Str, Bool, List, Instance, Event
 from traitsui.api import View, ListEditor, InstanceEditor, UItem, VGroup, HGroup, VSplit
 # ============= standard library imports ========================
@@ -32,6 +34,8 @@ from pychron.graph.stream_graph import StreamStackedGraph
 from pychron.hardware.core.i_core_device import ICoreDevice
 from pychron.loggable import Loggable
 from pychron.paths import paths
+from six.moves import range
+from six.moves import zip
 
 
 class DashboardDevice(Loggable):
@@ -84,6 +88,7 @@ class DashboardDevice(Loggable):
             dt = st - value.last_time
             if value.period == 'on_change':
                 if value.timeout and dt > value.timeout:
+                    self.debug('Force trigger. timeout={}'.format(value.timeout))
                     self._trigger(value, force=True)
             elif dt > value.period:
                 self._trigger(value)
@@ -92,9 +97,9 @@ class DashboardDevice(Loggable):
         try:
             self.debug('triggering value device={} value={} func={}'.format(self.hardware_device.name,
                                                                             value.name,
-                                                                            value.func_name))
+                                                                            value.__name__))
             nv = None
-            func = getattr(self.hardware_device, value.func_name)
+            func = getattr(self.hardware_device, value.__name__)
             if func is not None:
                 nv = func(**kw)
 
@@ -105,9 +110,9 @@ class DashboardDevice(Loggable):
         except BaseException:
             import traceback
 
-            print self.hardware_device, self.hardware_device.name, value.func_name
+            print(self.hardware_device, self.hardware_device.name, value.__name__)
             self.debug(traceback.format_exc())
-            value.use_pv = False
+            # value.use_pv = False
 
     def add_value(self, name, tag, func_name, period, enabled, threshold, units, timeout, record, bindname):
         pv = ProcessValue(name=name,
@@ -121,18 +126,18 @@ class DashboardDevice(Loggable):
                           record=record)
 
         if period == 'on_change':
-            self.debug('bind to {}'.format(bindname))
             if self.hardware_device:
                 if bindname:
+                    self.debug('bind to {}'.format(bindname))
                     if hasattr(self.hardware_device, bindname):
                         self.hardware_device.on_trait_change(lambda a, b, c, d: self._handle_change(pv, a, b, c, d),
                                                              bindname)
                     else:
                         self.debug('{} has not attribute "{}"'.format(self.hardware_device, bindname))
 
-                else:
-                    self.warning('need to set bindname for {}'.format(self.name, name))
-                    # self._device.on_trait_change(lambda new: self._push_value(pv, new), n)
+                        # else:
+                        #     self.warning('need to set bindname for {}'.format(self.name, name))
+                        # self._device.on_trait_change(lambda new: self._push_value(pv, new), n)
 
         self.values.append(pv)
         return pv
@@ -149,7 +154,13 @@ class DashboardDevice(Loggable):
         if pv.enabled:
 
             pv.last_time = time.time()
-            v = float(new)
+
+            try:
+                v = float(new)
+            except (ValueError, TypeError) as e:
+                self.warning('failed to push value pv.name={}, value={}, error={}'.format(pv.name, new, e))
+                return
+
             tripped = pv.is_different(v)
             if tripped:
                 self.update_value_event = (pv.name, new, pv.units)
@@ -207,7 +218,7 @@ class DashboardDevice(Loggable):
 
         if blob:
             step = 4 * fmt.count('f')
-            args = zip(*[struct.unpack(fmt, blob[i:i + step]) for i in xrange(0, len(blob), step)])
+            args = list(zip(*[struct.unpack(fmt, blob[i:i + step]) for i in range(0, len(blob), step)]))
             ns = []
             for blobv, lastv in zip(args, new_args):
                 blobv = list(blobv)

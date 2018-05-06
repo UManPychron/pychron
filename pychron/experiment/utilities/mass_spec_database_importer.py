@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 import os
 import struct
 import time
@@ -32,6 +33,7 @@ from pychron.experiment.utilities.info_blob import encode_infoblob
 from pychron.loggable import Loggable
 from pychron.mass_spec.database.massspec_database_adapter import MassSpecDatabaseAdapter
 from pychron.pychron_constants import ALPHAS
+from six.moves import zip
 
 mkeys = ['l2 value', 'l1 value', 'ax value', 'h1 value', 'h2 value']
 
@@ -222,7 +224,7 @@ class MassSpecDatabaseImporter(Loggable):
                 ret = self._add_analysis(session, spec, irradpos, rid, runtype)
                 db.commit()
                 return ret
-            except Exception, e:
+            except Exception as e:
                 import traceback
                 self.debug('Mass Spec save exception. {}'.format(e))
                 tb = traceback.format_exc()
@@ -247,7 +249,6 @@ class MassSpecDatabaseImporter(Loggable):
         spectrometer = spec.mass_spectrometer
         if spectrometer.lower() == 'argus':
             spectrometer = 'UM'
-
         tray = spec.tray
 
         pipetted_isotopes = self._make_pipetted_isotopes(runtype)
@@ -389,9 +390,12 @@ class MassSpecDatabaseImporter(Loggable):
             else:
                 dbdet = db.add_detector(det, Label=det)
 
-            ic = spec.isotopes[iso].ic_factor
-            dbdet.ICFactor = float(nominal_value(ic))
-            dbdet.ICFactorEr = float(std_dev(ic))
+            try:
+                ic = spec.isotopes[iso].ic_factor
+                dbdet.ICFactor = float(nominal_value(ic))
+                dbdet.ICFactorEr = float(std_dev(ic))
+            except KeyError:
+                pass
 
         db.flush()
         n = spec.get_ncounts(iso)
@@ -422,7 +426,7 @@ class MassSpecDatabaseImporter(Loggable):
         cvb = array(vb) - baseline.nominal_value
         blob1 = self._build_timeblob(tb, cvb)
 
-        blob2 = ''.join([struct.pack('>f', v) for v in vb])
+        blob2 = b''.join([struct.pack('>f', v) for v in vb])
         db.add_peaktimeblob(blob1, blob2, dbiso)
 
         # @todo: add filtered points blob
@@ -491,7 +495,7 @@ class MassSpecDatabaseImporter(Loggable):
     def _build_timeblob(self, t, v):
         """
         """
-        blob = ''
+        blob = b''
         for ti, vi in zip(t, v):
             blob += struct.pack('>ff', vi, ti)
         return blob

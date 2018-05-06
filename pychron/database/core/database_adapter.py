@@ -16,6 +16,8 @@
 
 # =============enthought library imports=======================
 
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import sys
 from datetime import datetime, timedelta
@@ -29,9 +31,13 @@ from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
 from traits.api import Password, Bool, Str, on_trait_change, Any, Property, cached_property
 
 from pychron import version
+from pychron.core.codetools.inspection import caller
 from pychron.database.core.base_orm import AlembicVersionTable
 from pychron.database.core.query import compile_query
 from pychron.loggable import Loggable
+import six
+from six.moves import range
+from six.moves import zip
 
 ATTR_KEYS = ['kind', 'username', 'host', 'name', 'password']
 
@@ -153,6 +159,7 @@ class MockQuery:
         return self
 
     def filter(self, *args, **kw):
+        # type: (object, object) -> object
         return self
 
     def all(self, *args, **kw):
@@ -254,13 +261,23 @@ class DatabaseAdapter(Loggable):
         with self._session_lock:
             return SessionCTX(self, use_parent_session)
 
-    def create_session(self):
+    def create_session(self, force=False):
         if self.connected:
             if self.session_factory:
-                if not self.session:
-                    self.debug('create new session {}'.format(id(self)))
+                if force:
+                    self.debug('force create new session {}'.format(id(self)))
+                    if self.session:
+                        self.session.close()
+
                     self.session = self.session_factory()
-                self._session_cnt += 1
+                    self._session_cnt = 1
+                else:
+                    if not self.session:
+                        # self.debug('create new session {}'.format(id(self)))
+                        self.session = self.session_factory()
+                    self._session_cnt += 1
+            else:
+                self.warning('no session factory')
         else:
             self.session = MockSession()
 
@@ -290,6 +307,8 @@ class DatabaseAdapter(Loggable):
         Trip the ``connection_parameters_changed`` flag. Next ``connect`` call with use the new values
         """
         self.connection_parameters_changed = True
+        self.session_factory = None
+        self.session = None
 
     # @caller
     def connect(self, test=True, force=False, warn=True, version_warn=False, attribute_warn=False):
@@ -336,6 +355,7 @@ class DatabaseAdapter(Loggable):
                     #                     Session.configure(bind=engine)
 
                     self.session_factory = sessionmaker(bind=engine, autoflush=self.autoflush,
+                                                        expire_on_commit=False,
                                                         autocommit=self.autocommit)
                     # self.session_factory = scoped_session(sessionmaker(bind=engine, autoflush=self.autoflush))
                     if test:
@@ -386,7 +406,7 @@ host= {}\nurl= {}'.format(self.name, self.username, self.host, self.public_url)
         if self.session:
             try:
                 self.session.commit()
-            except BaseException, e:
+            except BaseException as e:
                 self.warning('Commit exception: {}'.format(e))
                 self.session.rollback()
 
@@ -435,8 +455,13 @@ host= {}\nurl= {}'.format(self.name, self.username, self.host, self.public_url)
         user = self.username
         host = self.host
         name = self.name
+        if kind == 'sqlite':
+            pu = '{}:{}'.format(os.path.basename(os.path.dirname(self.path)),
+                                os.path.basename(self.path))
+        else:
+            pu = '{}://{}@{}/{}'.format(kind, user, host, name)
 
-        return '{}://{}@{}/{}'.format(kind, user, host, name)
+        return pu
 
     @cached_property
     def _get_url(self):
@@ -510,7 +535,7 @@ host= {}\nurl= {}'.format(self.name, self.username, self.host, self.public_url)
             connected = False
             self._test_connection_enabled = False
 
-        except Exception, e:
+        except Exception as e:
             self.warning('connection failed to {} exception={}'.format(self.public_url, e))
             connected = False
 
@@ -541,7 +566,7 @@ host= {}\nurl= {}'.format(self.name, self.username, self.host, self.public_url)
                     sess.commit()
 
                 return obj
-            except SQLAlchemyError, e:
+            except SQLAlchemyError as e:
                 import traceback
                 # traceback.print_exc()
                 self.debug('add_item exception {} {}'.format(obj, traceback.format_exc()))
@@ -601,7 +626,7 @@ host= {}\nurl= {}'.format(self.name, self.username, self.host, self.public_url)
 
         sess = self.session
         if sess is None or isinstance(sess, MockSession):
-            self.debug('USING MOCKSESSION**************')
+            self.debug('USING MOCKSESSION************** {}'.format(sess))
             return []
 
         if distinct_:
@@ -647,11 +672,14 @@ host= {}\nurl= {}'.format(self.name, self.username, self.host, self.public_url)
             # print compile_query(q)
             self.debug(compile_query(q))
 
-        return self._query(q, func, reraise)
+        items = self._query(q, func, reraise)
+        if items is None:
+            items = []
+        return items
 
     def _retrieve_first(self, table, value=None, key='name', order_by=None):
         if value is not None:
-            if not isinstance(value, (str, int, unicode, long, float)):
+            if not isinstance(value, (str, int, six.text_type, int, float)):
                 return value
         q = self.session.query(table)
         if value is not None:
@@ -661,8 +689,8 @@ host= {}\nurl= {}'.format(self.name, self.username, self.host, self.public_url)
             if order_by is not None:
                 q = q.order_by(order_by)
             return q.first()
-        except SQLAlchemyError, e:
-            print 'execption first', e
+        except SQLAlchemyError as e:
+            print('execption first', e)
             return
 
     def _query_all(self, q, **kw):
@@ -685,7 +713,7 @@ host= {}\nurl= {}'.format(self.name, self.username, self.host, self.public_url)
         f = getattr(q, func)
         try:
             return f()
-        except SQLAlchemyError, e:
+        except SQLAlchemyError as e:
             if reraise:
                 raise e
                 # if self.verbose:
@@ -719,7 +747,7 @@ host= {}\nurl= {}'.format(self.name, self.username, self.host, self.public_url)
         #         sess = self.get_session()
         #         if sess is None:
         #             return
-        if not isinstance(value, (str, int, unicode, long, float, list, tuple)):
+        if not isinstance(value, (str, int, six.text_type, int, float, list, tuple)):
             return value
 
         if not isinstance(value, (list, tuple)):
@@ -775,7 +803,7 @@ host= {}\nurl= {}'.format(self.name, self.username, self.host, self.public_url)
                             q = q.order_by(table.id.desc())
                         return q.limit(1).all()[-1]
 
-                    except (SQLAlchemyError, IndexError, AttributeError), e:
+                    except (SQLAlchemyError, IndexError, AttributeError) as e:
                         if verbose:
                             self.debug('no rows for {} {} {}'.format(table.__tablename__, key, value))
                         break

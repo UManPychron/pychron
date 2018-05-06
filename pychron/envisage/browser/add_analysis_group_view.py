@@ -14,7 +14,8 @@
 # limitations under the License.
 # ===============================================================================
 
-from traits.api import Str, List, HasTraits
+from __future__ import absolute_import
+from traits.api import Str, List, HasTraits, Dict, Any
 from traitsui.api import View, Item, EnumEditor
 
 
@@ -24,16 +25,32 @@ from traitsui.api import View, Item, EnumEditor
 
 class AddAnalysisGroupView(HasTraits):
     name = Str
-    project = Str
-    projects = List
+    project = Any
+    projects = Dict
+
+    def save(self, ans, db):
+        append = False
+
+        gdb = db.get_analysis_groups_by_name(self.name, self.project)
+        ok = True
+        if gdb:
+            gdb = gdb[-1]
+            if db.confirmation_dialog('"{}" already exists? Would you like to append your selection'.format(gdb.name)):
+                append = True
+            else:
+                ok = False
+
+        if append:
+            db.append_analysis_group(gdb, ans)
+        elif ok:
+            db.add_analysis_group(ans, self.name, self.project)
 
     def traits_view(self):
-        v = View(
-            Item('name'),
-            Item('project', editor=EnumEditor(name='projects')),
-            resizable=True,
-            buttons=['OK', 'Cancel'],
-            title='Add Analysis Group')
+        v = View(Item('name'),
+                 Item('project', editor=EnumEditor(name='projects')),
+                 resizable=True,
+                 buttons=['OK', 'Cancel'],
+                 title='Add Analysis Group')
         return v
 
 # ============= EOF =============================================

@@ -15,6 +15,8 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
+from __future__ import print_function
 from traits.api import Event, Str, List, Instance, String
 # ============= standard library imports ========================
 import os
@@ -24,6 +26,7 @@ from pychron.canvas.canvas2D.map_canvas import MapCanvas
 from pychron.core.helpers.filetools import list_directory2, add_extension
 from pychron.core.ui.stage_component_editor import LaserComponentEditor
 from pychron.core.ui.thread import Thread
+
 from pychron.managers.manager import Manager
 from pychron.paths import paths
 from pychron.stage.maps.base_stage_map import BaseStageMap
@@ -36,7 +39,7 @@ def get_stage_map_names(root=None):
         root = paths.map_dir
 
     sms = list_directory2(root, '.txt', remove_extension=True)
-    print root, sms
+    print(root, sms)
     sms = [si for si in sms if not si.endswith('.center')]
     us = list_directory2(paths.user_points_dir, '.yaml', remove_extension=True)
     if us:
@@ -62,6 +65,8 @@ class BaseStageManager(Manager):
     temp_hole = None
     root = Str
     # use_modified = Bool(True)  # set true to use modified affine calculation
+    def motor_event_hook(self, name, value, *args, **kw):
+        pass
 
     def goto_position(self, pos):
         raise NotImplementedError
@@ -150,7 +155,7 @@ class BaseStageManager(Manager):
             self._stop()
 
         if name is None:
-            name = func.func_name
+            name = func.__name__
 
         self.move_thread = Thread(name='stage.{}'.format(name),
                                   target=func, args=(pos,) + args, kwargs=kw)
@@ -210,7 +215,7 @@ class BaseStageManager(Manager):
                     sm = pickle.load(f)
                     if not sm.endswith('.center'):
                         return sm
-                except pickle.PickleError:
+                except (pickle.PickleError, ValueError):
                     pass
                     # def traits_view(self):
                     # self.initialize_stage()

@@ -15,10 +15,11 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 import datetime
 import re
 
-from traits.api import HasTraits, Str, Property, List, Enum, Button, Bool
+from traits.api import HasTraits, Str, Property, List, Enum, Button, Bool, on_trait_change
 from traitsui.api import View, UItem, HGroup, EnumEditor, InstanceEditor, Item, VGroup
 from traitsui.editors import ListEditor
 from uncertainties import std_dev, nominal_value
@@ -33,11 +34,13 @@ class PipelineFilter(HasTraits):
     attribute = Str
     comparator = Enum('=', '<', '>', '<=', '>=', '!=', 'between', 'not between')
     criterion = Str
-    attributes = ('age', 'age error', 'kca', 'kca error', 'aliquot', 'step', 'run date')
+    attributes = ('age', 'age error', 'kca', 'kca error',
+                  'aliquot', 'step', 'run date',
+                  'extract_value', 'duration', 'cleanup', 'tag')
 
     chain_operator = Enum('and', 'or')
     show_chain = Bool
-
+    remove_button = Button
     _eval_func = None
 
     def __init__(self, txt=None, *args, **kw):
@@ -105,10 +108,16 @@ class PipelineFilter(HasTraits):
 
     def evaluate(self, item):
         attr = self.attribute
-        val = self._get_value(item, attr)
-        attr = attr.replace(' ', '_')
-        edict = {attr: val}
-        return self._eval_func(edict)
+        comp = self.comparator
+        crit = self.criterion
+        ret = True
+        if attr and comp and crit:
+            val = self._get_value(item, attr)
+            attr = attr.replace(' ', '_')
+            edict = {attr: val}
+            ret = self._eval_func(edict)
+
+        return ret
 
     def _convert_date(self, d):
         for s in ('%B', '%b', '%m',
@@ -136,7 +145,8 @@ class PipelineFilter(HasTraits):
         return val
 
     def traits_view(self):
-        v = View(HGroup(UItem('chain_operator', visible_when='show_chain'),
+        v = View(HGroup(icon_button_editor('remove_button', 'delete'),
+                        UItem('chain_operator', visible_when='show_chain'),
                         UItem('attribute',
                               editor=EnumEditor(name='attributes')),
                         UItem('comparator'),
@@ -179,15 +189,22 @@ class FilterNode(BaseNode):
             fi.show_chain = i != 0
 
     def traits_view(self):
-        v = View(VGroup(icon_button_editor('add_filter_button', 'add'),
-                        UItem('filters', editor=ListEditor(mutable=False,
-                                                           style='custom',
-                                                           editor=InstanceEditor())),
-                        Item('remove', label='Remove Analyses',
-                             tooltip='Remove Analyses from the list if checked  otherwise '
-                                     'set temporary tag to "omit"'),
+        v = View(VGroup(VGroup(icon_button_editor('add_filter_button', 'add'),
+                               UItem('filters', editor=ListEditor(mutable=False,
+                                                                  style='custom',
+                                                                  editor=InstanceEditor())),
+                               show_border=True,
+                               label='Filters'),
+                        VGroup(Item('remove', label='Remove Analyses',
+                                    tooltip='Remove Analyses from the list if checked  otherwise '
+                                            'set temporary tag to "omit"'),
+                               show_border=True),
                         VGroup(UItem('help_str', style='readonly'), label='Help', show_border=True)),
+                 height=400,
+                 width=600,
                  kind='livemodal',
+                 title='Edit Filter',
+                 resizable=True,
                  buttons=['OK', 'Cancel'])
         return v
 
@@ -221,7 +238,8 @@ class FilterNode(BaseNode):
             return flag
 
         if self.remove:
-            vs = filter(filterfunc, getattr(state, self.analysis_kind))
+            # vs = list(filter(filterfunc, getattr(state, self.analysis_kind)))
+            vs = [a for a in getattr(state, self.analysis_kind) if filterfunc(a)]
             setattr(state, self.analysis_kind, vs)
         else:
             ans = getattr(state, self.analysis_kind)
@@ -239,4 +257,8 @@ class FilterNode(BaseNode):
         vs = [fi.to_string() for fi in self.filters] * 3
         d['filters'] = vs
 
+
+if __name__ == '__main__':
+    a = FilterNode()
+    a.configure_traits()
 # ============= EOF =============================================

@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= standard library imports ========================
+from __future__ import absolute_import
 from numpy import where, polyval, polyfit
 # ============= enthought library imports =======================
 from traits.api import Str
@@ -65,38 +66,51 @@ class InterpolationRegressor(BaseRegressor):
                 ti -= 1
 
             if attr == 'value':
-                return ys[ti]
+                v = ys[ti]
             else:
-                return es[ti]
+                v = es[ti]
+            return v
 
     def bracketing_average_predictors(self, tm, exc, attr='value'):
         try:
-            pb, ab, _ = self._bracketing_predictors(tm, exc, attr)
+            pb, ab, _, _ = self._bracketing_predictors(tm, exc, attr)
 
-            return (pb + ab) / 2.0
+            v = (pb + ab) / 2.0
         except TypeError:
-            return 0
+            if attr == 'value':
+                v = self.ys[0]
+            else:
+                v = self.yserr[0]
+        return v
 
     def bracketing_interpolate_predictors(self, tm, exc, attr='value'):
         try:
-            pb, ab, x = self._bracketing_predictors(tm, exc, attr)
+            pb, ab, x, _ = self._bracketing_predictors(tm, exc, attr)
 
-            y = [pb, ab]
-
-            if attr == 'error':
-                '''
-                    geometrically sum the errors and weight by the fractional difference
-                    
-                    0----10----------------100
-                    f=0.1
-                '''
-                f = (tm - x[0]) / (x[1] - x[0])
-                v = (((1 - f) * pb) ** 2 + (f * ab) ** 2) ** 0.5
+            if tm >= x[1]:
+                v = self.yserr[-1] if attr == 'error' else self.ys[-1]
+            elif tm <= x[0]:
+                v = self.yserr[0] if attr == 'error' else self.ys[0]
             else:
-                v = polyval(polyfit(x, y, 1), tm)
-            return v
+
+                if attr == 'error':
+                    '''
+                        geometrically sum the errors and weight by the fractional difference
+
+                        0----10----------------100
+                        f=0.1
+                    '''
+                    f = (tm - x[0]) / (x[1] - x[0])
+                    v = (((1 - f) * pb) ** 2 + (f * ab) ** 2) ** 0.5
+                else:
+                    v = polyval(polyfit(x, [pb, ab], 1), tm)
+
         except TypeError:
-            return 0
+            if attr == 'value':
+                v = self.ys[0]
+            else:
+                v = self.yserr[0]
+        return v
 
     def _bracketing_predictors(self, tm, exc, attr):
         xs = self.xs
@@ -120,9 +134,19 @@ class InterpolationRegressor(BaseRegressor):
                 pb = es[li]
                 ab = es[hi]
 
-            return pb, ab, (xs[li], xs[hi])
+            args = pb, ab, (xs[li], xs[hi]), (li, hi)
         except IndexError:
-            return 0
+            li, hi = 0, 0
+            if attr == 'value':
+                pb = ys[li]
+                ab = ys[hi]
+            else:
+                pb = es[li]
+                ab = es[hi]
+
+            args = pb, ab, (xs[li], xs[hi]), (li, hi)
+
+        return args
 
 # class GaussianRegressor(BaseRegressor):
 #     def _calculate_coefficients(self):

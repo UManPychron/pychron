@@ -16,25 +16,22 @@
 
 # ============= enthought library imports =======================
 from traits.api import HasTraits, Str, Instance, Button, Bool
-from traitsui.api import View, UItem, HGroup, VGroup, Group, spring
-from traitsui.handler import Handler
-
+from traitsui.api import View, UItem, HGroup, VGroup, Group, spring, Handler, EnumEditor
 from pychron.core.ui.custom_label_editor import CustomLabel
-from pychron.envisage.browser.adapters import BrowserAdapter
 from pychron.envisage.browser.sample_view import BrowserSampleView, BrowserInterpretedAgeView
 from pychron.envisage.browser.time_view import TimeViewModel
 from pychron.envisage.icon_button_editor import icon_button_editor
 
 
-class AnalysisGroupAdapter(BrowserAdapter):
-    all_columns = [('Name', 'name'),
-                   ('Created', 'create_date'),
-                   ('Modified', 'last_modified')]
-
-    columns = [('Name', 'name'),
-               ('Create Date', 'create_date'),
-               ('Modified', 'last_modified')]
-
+# class AnalysisGroupAdapter(BrowserAdapter):
+#     all_columns = [('Name', 'name'),
+#                    ('Created', 'create_date'),
+#                    ('Modified', 'last_modified')]
+#
+#     columns = [('Name', 'name'),
+#                ('Create Date', 'create_date'),
+#                ('Modified', 'last_modified')]
+#
 
 class BrowserViewHandler(Handler):
     def pane_append_button_changed(self, info):
@@ -52,12 +49,7 @@ class BaseBrowserView(HasTraits):
     multi_select = True
     analyses_defined = Str('1')
 
-    # labnumber_tabular_adapter = Instance(LabnumberAdapter, ())
-    # analysis_tabular_adapter = Instance(AnalysisAdapter, ())
-    # analysis_group_tabular_adapter = Instance(AnalysisGroupAdapter, ())
-
     sample_view = Instance(BrowserSampleView)
-    # query_view = Instance(BrowserQueryView)
     time_view = Instance(TimeViewModel)
 
     model = Instance(HasTraits)
@@ -72,21 +64,17 @@ class BaseBrowserView(HasTraits):
     def _get_browser_tool_group(self):
         hgrp = HGroup(icon_button_editor('filter_by_button',
                                          'find',
-                                         tooltip='Filter analyses using defined criteria'),
-                      # icon_button_editor('load_view_button',
-                      #                    'table',
-                      #                    tooltip='Select analyses by load'),
-                      # icon_button_editor('graphical_filter_button',
-                      #                    'chart_curve_go',
-                      #                    tooltip='Filter analyses graphically'),
-                      icon_button_editor('load_recent_button', 'time-go', tooltip='Load recent analyses'),
-
+                                         tooltip='Search for analyses using defined criteria'),
+                      icon_button_editor('advanced_filter_button', 'magnifier',
+                                         tooltip='Advanced Search. e.g. search by intensity'),
+                      icon_button_editor('load_recent_button', 'edit-history-2', tooltip='Load recent analyses'),
                       icon_button_editor('find_references_button',
                                          '3d_glasses',
                                          tooltip='Find references associated with current selection'),
-                      icon_button_editor('toggle_view',
-                                         'arrow_switch',
-                                         tooltip='Toggle between Sample and Time views'),
+                      # icon_button_editor('toggle_view',
+                      #                    'arrow_switch',
+                      #                    tooltip='Toggle between Sample and Time views'),
+                      UItem('object.dvc.data_source', editor=EnumEditor(name='object.dvc.data_sources')),
                       spring,
                       CustomLabel('datasource_url', color='maroon'),
                       show_border=True)
@@ -98,18 +86,11 @@ class BaseBrowserView(HasTraits):
                           visible_when='sample_view_active'),
                     UItem('time_view_model',
                           style='custom',
-                          visible_when='not sample_view_active')
-                    # UItem('pane.query_view',
-                    # style='custom',
-                    # visible_when='not sample_view_active')
-                    )
+                          visible_when='not sample_view_active'))
         return grp
 
     def _sample_view_default(self):
         return BrowserSampleView(model=self.model, pane=self)
-
-        # def _query_view_default(self):
-        # return BrowserQueryView(model=self.model.data_selector, pane=self)
 
 
 class StandaloneBrowserView(BaseBrowserView):
@@ -119,9 +100,6 @@ class StandaloneBrowserView(BaseBrowserView):
         hgrp = HGroup(icon_button_editor('filter_by_button',
                                          'find',
                                          tooltip='Filter analyses using defined criteria'),
-                      # icon_button_editor('graphical_filter_button',
-                      #                    'chart_curve_go',
-                      #                    tooltip='Filter analyses graphically'),
                       icon_button_editor('toggle_view',
                                          'arrow_switch',
                                          tooltip='Toggle between Sample and Time views'),
@@ -131,7 +109,8 @@ class StandaloneBrowserView(BaseBrowserView):
 
         v = View(VGroup(hgrp, main_grp),
                  buttons=['OK', 'Cancel'],
-                 title='Browser',
+                 title='Standalone Browser',
+                 width=-900,
                  resizable=True)
 
         return v
@@ -164,6 +143,7 @@ class BrowserView(BaseBrowserView):
         v = View(VGroup(tool_grp, main_grp, bgrp),
                  handler=BrowserViewHandler(),
                  title='Browser',
+                 width=1200,
                  resizable=True)
 
         return v

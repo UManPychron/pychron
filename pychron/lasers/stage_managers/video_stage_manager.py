@@ -15,22 +15,32 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
+from __future__ import print_function
+import yaml
+from apptools.preferences.preference_binding import bind_preference
+from skimage.color import gray2rgb
+from skimage.draw import circle_perimeter, line
+from traits.api import Instance, String, Property, Button, Bool, Event, on_trait_change, Str, Float
+from pychron.core.ui.thread import Thread as UIThread, sleep
+import json
 import os
 import shutil
 import time
-from threading import Thread, Timer
+from threading import Thread, Timer, Event as TEvent
 
-from apptools.preferences.preference_binding import bind_preference
-from numpy import copy
-from traits.api import Instance, String, Property, Button, Bool, Event, on_trait_change, Str, Float
+from numpy import copy, array
 
-from pychron.canvas.canvas2D.camera import Camera
+from pychron.canvas.canvas2D.camera import Camera, YamlCamera, BaseCamera
+from pychron.core.helpers import binpack
+from pychron.core.helpers.binpack import pack, format_blob, encode_blob
 from pychron.core.helpers.filetools import unique_path, unique_path_from_manifest
 from pychron.core.ui.stage_component_editor import VideoComponentEditor
 from pychron.image.video import Video, pil_save
 from pychron.mv.lumen_detector import LumenDetector
 from pychron.paths import paths
-from stage_manager import StageManager
+from .stage_manager import StageManager
+from pychron.core.ui.thread import Thread as QThread
 
 try:
     from pychron.canvas.canvas2D.video_laser_tray_canvas import \
@@ -44,6 +54,8 @@ class VideoStageManager(StageManager):
     """
     """
     video = Instance(Video)
+    camera = Instance(BaseCamera)
+
     canvas_editor_klass = VideoComponentEditor
 
     camera_zoom_coefficients = Property(String(enter_set=True, auto_set=False),
@@ -51,6 +63,8 @@ class VideoStageManager(StageManager):
     _camera_zoom_coefficients = String
 
     use_auto_center_interpolation = Bool(False)
+
+    configure_camera_device_button = Button
 
     autocenter_button = Button('AutoCenter')
     configure_autocenter_button = Button('Configure')
@@ -60,8 +74,8 @@ class VideoStageManager(StageManager):
     autofocus_manager = Instance(
         'pychron.mv.focus.autofocus_manager.AutoFocusManager')
 
-    zoom_calibration_manager = Instance(
-        'pychron.mv.zoom.zoom_calibration.ZoomCalibrationManager')
+    # zoom_calibration_manager = Instance(
+    #     'pychron.mv.zoom.zoom_calibration.ZoomCalibrationManager')
 
     snapshot_button = Button('Snapshot')
     auto_save_snapshot = Bool(True)
@@ -85,8 +99,7 @@ class VideoStageManager(StageManager):
     auto_upload = Bool(False)
     keep_local_copy = Bool(False)
 
-    camera = Instance(Camera)
-    lumen_detector = Instance(LumenDetector, ())
+    lumen_detector = Instance(LumenDetector)
 
     render_with_markup = Bool(False)
 
@@ -95,12 +108,38 @@ class VideoStageManager(StageManager):
 
     pxpermm = Float(23)
 
+    _measure_grain_t = None
+    _measure_grain_evt = None
+    grain_polygons = None
+
+    # test_button = Button
+    # _test_state = False
+
+    # def _test_button_fired(self):
+    #     if self._test_state:
+    #         # self.stop_measure_grain_polygon()
+    #         #
+    #         # time.sleep(2)
+    #         #
+    #         # d = self.get_grain_polygon_blob()
+    #         # print d
+    #         self.parent.disable_laser()
+    #     else:
+    #         self.parent.luminosity_degas_test()
+    #         # self.start_measure_grain_polygon()
+    #     self._test_state = not self._test_state
+
+    def motor_event_hook(self, name, value, *args, **kw):
+        if name == 'zoom':
+            self._update_zoom(value)
+
     def bind_preferences(self, pref_id):
         self.debug('binding preferences')
         super(VideoStageManager, self).bind_preferences(pref_id)
         if self.autocenter_manager:
-            bind_preference(self.autocenter_manager, 'use_autocenter',
-                            '{}.use_autocenter'.format(pref_id))
+            self.autocenter_manager.bind_preferences(pref_id)
+            # bind_preference(self.autocenter_manager, 'use_autocenter',
+            #                 '{}.use_autocenter'.format(pref_id))
 
         bind_preference(self, 'render_with_markup',
                         '{}.render_with_markup'.format(pref_id))
@@ -126,14 +165,77 @@ class VideoStageManager(StageManager):
         bind_preference(self.video_archiver, 'root',
                         '{}.video_directory'.format(pref_id))
 
-        bind_preference(self.video, 'output_mode',
-                        '{}.video_output_mode'.format(pref_id))
-        bind_preference(self.video, 'ffmpeg_path',
-                        '{}.ffmpeg_path'.format(pref_id))
+        # bind_preference(self.video, 'output_mode',
+        #                 '{}.video_output_mode'.format(pref_id))
+        # bind_preference(self.video, 'ffmpeg_path',
+        #                 '{}.ffmpeg_path'.format(pref_id))
 
-    def start_recording(self, new_thread=True, path=None, use_dialog=False, basename='vm_recording', **kw):
+    def get_grain_polygon(self):
+        ld = self.lumen_detector
+        l, m = ld.lum()
+        return m.tostring()
+
+    def get_grain_polygon_blob(self):
+        # self.debug('Get grain polygons n={}'.format(len(self.grain_polygons)))
+
+        try:
+            t, md, p = next(self.grain_polygons)
+
+            a = pack('ff', ((t, md),))
+            b = pack('HH', p)
+
+            return encode_blob(a + b)
+
+        except (StopIteration, TypeError) as e:
+            self.debug('No more grain polygons. {}'.format(e))
+
+    def stop_measure_grain_polygon(self):
+        self.debug('Stop measure polygons {}'.format(self._measure_grain_evt))
+        if self._measure_grain_evt:
+            self._measure_grain_evt.set()
+        return True
+
+    def start_measure_grain_polygon(self):
+        self._measure_grain_evt = evt = TEvent()
+
+        def _measure_grain_polygon():
+            ld = self.lumen_detector
+            dim = self.stage_map.g_dimension
+            ld.pxpermm = self.pxpermm
+
+            self.debug('Starting measure grain polygon')
+            masks = []
+            display_image = self.autocenter_manager.display_image
+
+            mask_dim = dim * 1.05
+            mask_dim_mm = mask_dim * self.pxpermm
+            ld.grain_measuring = True
+            while not evt.is_set():
+                src = self._get_preprocessed_src()
+                if src is not None:
+                    targets = ld.find_targets(display_image, src, dim, mask=mask_dim,
+                                              search={'start_offset_scalar': 1.5})
+                    if targets:
+                        t = time.time()
+                        targets = [(t, mask_dim_mm, ti.poly_points.tolist()) for ti in targets]
+                        masks.extend(targets)
+                sleep(0.1)
+            ld.grain_measuring = False
+
+            self.grain_polygons = (m for m in masks)
+            self.debug('exiting measure grain')
+
+        self._measure_grain_t = QThread(target=_measure_grain_polygon)
+        self._measure_grain_t.start()
+        return True
+
+    def start_recording(self, path=None, use_dialog=False, basename='vm_recording', **kw):
         """
         """
+        directory = None
+        if os.path.sep in basename:
+            args = os.path.split(basename)
+            directory, basename = os.path.sep.join(args[:-1]), args[-1]
 
         if path is None:
             if use_dialog:
@@ -143,16 +245,17 @@ class VideoStageManager(StageManager):
                 self.debug('video archiver root {}'.format(vd))
                 if not vd:
                     vd = paths.video_dir
+                if directory:
+                    vd = os.path.join(vd, directory)
+                    if not os.path.isdir(vd):
+                        os.mkdir(vd)
 
                 path = unique_path_from_manifest(vd, basename, extension='avi')
 
         kw['path'] = path
         kw['basename'] = basename
-        if new_thread:
-            t = Thread(target=self._start_recording, kwargs=kw)
-            t.start()
-        else:
-            self._start_recording(**kw)
+
+        self._start_recording(**kw)
         self.is_recording = True
         return path
 
@@ -166,7 +269,10 @@ class VideoStageManager(StageManager):
             p = self.video.output_path
             if self.video.stop_recording(wait=True):
                 if self.auto_upload:
-                    p = self._upload(p, inform=False)
+                    try:
+                        p = self._upload(p, inform=False)
+                    except BaseException as e:
+                        self.critical('Failed uploading {}. error={}'.format(p, e))
             return p
 
         if self.video.is_recording():
@@ -176,10 +282,25 @@ class VideoStageManager(StageManager):
             else:
                 return close()
 
+    @property
+    def video_configuration_path(self):
+        if self.configuration_dir_path:
+            return os.path.join(self.configuration_dir_path, 'camera.yaml')
+
     def initialize_video(self):
         if self.video:
-            self.video.open(
-                identifier=self.video_identifier)
+            identifier = 0
+            p = self.video_configuration_path
+            if os.path.isfile(p):
+                with open(p, 'r') as rfile:
+                    yd = yaml.load(rfile)
+                    vid = yd['Device']
+                    identifier = vid.get('identifier', 0)
+
+            self.video.open(identifier=identifier)
+
+            self.video.load_configuration(p)
+            self.lumen_detector.pixel_depth = self.video.pixel_depth
 
     def initialize_stage(self):
         super(VideoStageManager, self).initialize_stage()
@@ -242,7 +363,9 @@ class VideoStageManager(StageManager):
                     else:
                         self.information_dialog('Snapshot uploaded to "{}"'.format(upath))
             else:
-                self.information_dialog('Snapshot saved to "{}"'.format(path))
+                upath = None
+                if inform:
+                    self.information_dialog('Snapshot saved to "{}"'.format(path))
 
             if return_blob:
                 with open(path, 'rb') as rfile:
@@ -276,7 +399,7 @@ class VideoStageManager(StageManager):
     def clean_video_archive(self):
         if self.use_video_archiver:
             self.info('Cleaning video directory')
-            self.video_archiver.clean()
+            self.video_archiver.clean(('manifest.yaml',))
 
     def is_auto_correcting(self):
         return self._auto_correcting
@@ -286,20 +409,29 @@ class VideoStageManager(StageManager):
 
     def get_scores(self, **kw):
         ld = self.lumen_detector
+        src = self._get_preprocessed_src()
+        return ld.get_scores(src, **kw)
 
-        src = self.video.get_cached_frame()
+    def find_lum_peak(self, min_distance, blur):
+        ld = self.lumen_detector
+        src = self._get_preprocessed_src()
 
-        csrc = copy(src)
-        return ld.get_scores(csrc, **kw)
+        dim = self.stage_map.g_dimension
+        mask_dim = dim * 1.05
+        # mask_dim_mm = mask_dim * self.pxpermm
+        if src is not None and src.ndim >= 2:
+            return ld.find_lum_peak(src, dim, mask_dim,
+                                    blur=blur,
+                                    min_distance=min_distance)
 
     def get_brightness(self, **kw):
         ld = self.lumen_detector
-
-        src = self.video.get_cached_frame()
-
-        csrc = copy(src)
-        src, v = ld.get_value(csrc, **kw)
-        return csrc, src, v
+        src = self._get_preprocessed_src()
+        return ld.get_value(src, **kw)
+        # src = self.video.get_cached_frame()
+        # csrc = copy(src)
+        # src, v = ld.get_value(csrc, **kw)
+        # return csrc, src, v
 
     def get_frame_size(self):
         cw = 2 * self.crop_width * self.pxpermm
@@ -312,10 +444,23 @@ class VideoStageManager(StageManager):
 
     def finish_move_to_hole(self, user_entry):
         self.debug('finish move to hole')
-        if user_entry and not self.keep_images_open:
-            self.close_open_images()
+        # if user_entry and not self.keep_images_open:
+        #     self.close_open_images()
 
     # private
+    def _get_preprocessed_src(self):
+        ld = self.lumen_detector
+        src = copy(self.video.get_cached_frame())
+        dim = self.stage_map.g_dimension
+        ld.pxpermm = self.pxpermm
+
+        offx, offy = self.canvas.get_screen_offset()
+        cropdim = dim * 2.5
+        if src is not None:
+            if len(src.shape):
+                src = ld.crop(src, cropdim, cropdim, offx, offy, verbose=False)
+                return src
+
     def _stage_map_changed_hook(self):
         self.lumen_detector.hole_radius = self.stage_map.g_dimension
 
@@ -330,7 +475,9 @@ class VideoStageManager(StageManager):
             srv = 'pychron.media_storage.manager.MediaStorageManager'
             msm = self.parent.application.get_service(srv)
             if msm is not None:
-                dest = os.path.join(self.parent.name, os.path.basename(src))
+                d = os.path.split(os.path.dirname(src))[-1]
+                dest = os.path.join(self.parent.name, d,
+                                    os.path.basename(src))
                 msm.put(src, dest)
 
                 if not self.keep_local_copy:
@@ -400,15 +547,50 @@ class VideoStageManager(StageManager):
 
         video = self.video
 
+        crop_to_hole = True
+        dim = self.stage_map.g_dimension
+        cropdim = dim * 8 * self.pxpermm
+        color = self.canvas.crosshairs_color.getRgb()[:3]
+
+        r = int(self.canvas.get_crosshairs_radius() * self.pxpermm)
+
+        # offx, offy = self.canvas.get_screen_offset()
+
         def renderer(p):
-            cw, ch = self.get_frame_size()
+            # cw, ch = self.get_frame_size()
             frame = video.get_cached_frame()
-            frame = video.crop(frame, 0, 0, cw, ch)
+            if frame is not None:
+                if not len(frame.shape):
+                    return
+
+            frame = copy(frame)
+            # ch, cw, _ = frame.shape
+            # ch, cw = int(ch), int(cw)
+
+            if crop_to_hole:
+                frame = video.crop(frame, 0, 0, cropdim, cropdim)
+
+            if self.render_with_markup:
+                # draw crosshairs
+                if len(frame.shape) == 2:
+                    frame = gray2rgb(frame)
+
+                ch, cw, _ = frame.shape
+                ch, cw = int(ch), int(cw)
+                y = ch // 2
+                x = cw // 2
+
+                cp = circle_perimeter(y, x, r, shape=(ch, cw))
+
+                frame[cp] = color
+
+                frame[line(y, 0, y, x - r)] = color  # left
+                frame[line(y, x + r, y, int(cw) - 1)] = color  # right
+                frame[line(0, x, y - r, x)] = color  # bottom
+                frame[line(y + r, x, int(ch) - 1, x)] = color  # top
+
             if frame is not None:
                 pil_save(frame, p)
-
-        if self.render_with_markup:
-            renderer = self._render_snapshot
 
         self.video.start_recording(path, renderer)
 
@@ -423,33 +605,33 @@ class VideoStageManager(StageManager):
             self._autocenter(holenum=holenum, ntries=ntries, save=True)
             self._auto_correcting = False
 
-    def find_center(self):
-        ox, oy = self.canvas.get_screen_offset()
-        rpos, src = self.autocenter_manager.calculate_new_center(
-            self.stage_controller.x,
-            self.stage_controller.y,
-            ox, oy,
-            dim=self.stage_map.g_dimension, open_image=False)
+    # def find_center(self):
+    #     ox, oy = self.canvas.get_screen_offset()
+    #     rpos, src = self.autocenter_manager.calculate_new_center(
+    #         self.stage_controller.x,
+    #         self.stage_controller.y,
+    #         ox, oy,
+    #         dim=self.stage_map.g_dimension, open_image=False)
+    #
+    #     return rpos, src
 
-        return rpos, src
-
-    def find_target(self):
-        if self.video:
-            ox, oy = self.canvas.get_screen_offset()
-            src = self.video.get_cached_frame()
-
-            ch = cw = self.pxpermm * self.stage_map.g_dimension * 2.5
-            src = self.video.crop(src, ox, oy, cw, ch)
-            return self.lumen_detector.find_target(src)
-
-    def find_best_target(self):
-        if self.video:
-            src = self.video.get_cached_frame()
-            src = self.autocenter_manager.crop(src)
-            return self.lumen_detector.find_best_target(src)
+    # def find_target(self):
+    #     if self.video:
+    #         ox, oy = self.canvas.get_screen_offset()
+    #         src = self.video.get_cached_frame()
+    #
+    #         ch = cw = self.pxpermm * self.stage_map.g_dimension * 2.5
+    #         src = self.video.crop(src, ox, oy, cw, ch)
+    #         return self.lumen_detector.find_target(src)
+    #
+    # def find_best_target(self):
+    #     if self.video:
+    #         src = self.video.get_cached_frame()
+    #         src = self.autocenter_manager.crop(src)
+    #         return self.lumen_detector.find_best_target(src)
 
     def _autocenter(self, holenum=None, ntries=3, save=False,
-                    use_interpolation=False, inform=False,
+                    inform=False,
                     alpha_enabled=True,
                     auto_close_image=True):
         self.debug('do autocenter')
@@ -460,9 +642,9 @@ class VideoStageManager(StageManager):
         if self.autocenter_manager.use_autocenter:
             time.sleep(0.1)
             ox, oy = self.canvas.get_screen_offset()
-            for ti in xrange(max(1, ntries)):
+            for ti in range(max(1, ntries)):
                 # use machine vision to calculate positioning error
-                args = self.autocenter_manager.calculate_new_center(
+                rpos = self.autocenter_manager.calculate_new_center(
                     self.stage_controller.x,
                     self.stage_controller.y,
                     ox, oy,
@@ -470,9 +652,9 @@ class VideoStageManager(StageManager):
                     alpha_enabled=alpha_enabled,
                     auto_close_image=auto_close_image)
 
-                if args is not None:
-                    rpos, _ = args
+                if rpos is not None:
                     self.linear_move(*rpos, block=True,
+                                     source='autocenter',
                                      use_calibration=False,
                                      update_hole=False,
                                      velocity_scalar=0.1)
@@ -504,7 +686,10 @@ class VideoStageManager(StageManager):
             #            f = 'uncorrected'
             corrected = False
             if holenum is not None:
-                rpos = sm.get_hole(holenum).nominal_position
+                hole = sm.get_hole(holenum)
+                if hole:
+                    rpos = hole.nominal_position
+
         self.debug('Autocenter duration ={}'.format(time.time() - st))
         return rpos, corrected, interp
 
@@ -518,10 +703,23 @@ class VideoStageManager(StageManager):
     # ===============================================================================
     # handlers
     # ===============================================================================
+    def _configure_camera_device_button_fired(self):
+        if self.video:
+            self.video.load_configuration(self.video_configuration_path)
+
+            if hasattr(self.video.cap, 'reload_configuration'):
+                self.video.cap.reload_configuration(self.video_configuration_path)
+            self.lumen_detector.pixel_depth = self.video.pixel_depth
+
+    def _update_zoom(self, v):
+        if self.camera:
+            self._update_xy_limits()
+
     @on_trait_change('parent:motor_event')
-    def _update_zoom(self, new):
-        s = self.stage_controller
-        if self.canvas.camera:
+    def _update_motor(self, new):
+        print('motor event', new, self.canvas, self.canvas.camera)
+        # s = self.stage_controller
+        if self.camera:
             if not isinstance(new, (int, float)):
                 args, _ = new
                 name, v = args[:2]
@@ -530,8 +728,9 @@ class VideoStageManager(StageManager):
                 v = new
 
             if name == 'zoom':
-                pxpermm = self.canvas.camera.set_limits_by_zoom(v, s.x, s.y)
-                self.pxpermm = pxpermm
+                self._update_xy_limits()
+                # pxpermm = self.canvas.camera.set_limits_by_zoom(v, s.x, s.y)
+                # self.pxpermm = pxpermm
             elif name == 'beam':
                 self.lumen_detector.beam_radius = v / 2.0
 
@@ -570,16 +769,15 @@ class VideoStageManager(StageManager):
             self.video_server.stop()
 
     def _get_camera_zoom_coefficients(self):
-        return self.canvas.camera.zoom_coefficients
+        return self.camera.zoom_coefficients
 
     def _set_camera_zoom_coefficients(self, v):
-        print v
-        self.canvas.camera.zoom_coefficients = ','.join(map(str, v))
+        self.camera.zoom_coefficients = ','.join(map(str, v))
         self._update_xy_limits()
 
     def _validate_camera_zoom_coefficients(self, v):
         try:
-            return map(float, v.split(','))
+            return list(map(float, v.split(',')))
         except ValueError:
             pass
 
@@ -592,8 +790,12 @@ class VideoStageManager(StageManager):
 
         x = self.stage_controller.get_current_position('x')
         y = self.stage_controller.get_current_position('y')
-        pxpermm = self.canvas.camera.set_limits_by_zoom(z, x, y)
-        self.pxpermm = pxpermm
+        if self.camera:
+            pxpermm = self.camera.set_limits_by_zoom(z, x, y, self.canvas)
+            self.pxpermm = pxpermm
+            self.debug('updated xy limits zoom={}, pxpermm={}'.format(z, pxpermm))
+
+        self.canvas.request_redraw()
 
     def _get_record_label(self):
         return 'Start Recording' if not self.is_recording else 'Stop'
@@ -604,17 +806,8 @@ class VideoStageManager(StageManager):
     def _canvas_factory(self):
         """
         """
-        try:
-            video = self.video
-        except AttributeError:
-            self.warning('Video not Available')
-            video = None
-
         v = VideoLaserTrayCanvas(stage_manager=self,
-                                 padding=30,
-                                 video=video,
-                                 camera=self.camera)
-        self.camera.parent = v
+                                 padding=30)
         return v
 
     def _canvas_editor_factory(self):
@@ -626,28 +819,35 @@ class VideoStageManager(StageManager):
     # defaults
     # ===============================================================================
     def _camera_default(self):
-        camera = Camera()
+        klass = YamlCamera
+        # p = os.path.join(self.configuration_dir_path, 'camera.yaml')
 
-        p = os.path.join(paths.canvas2D_dir, 'camera.cfg')
-        camera.load(p)
+        p = self.video_configuration_path
+        if p is not None:
+            if not os.path.isfile(p):
+                klass = Camera
+                pp = os.path.join(self.configuration_dir_path, 'camera.cfg')
+                if not os.path.isfile(pp):
+                    self.warning_dialog('No Camera configuration file a {} or {}'.format(p, pp))
+                p = pp
 
-        #        camera.current_position = (0, 0)
-        camera.set_limits_by_zoom(0, 0, 0)
+            camera = klass()
+            camera.load(p)
+        else:
+            camera = Camera()
 
-        vid = self.video
-        if vid:
-            # swap red blue channels True or False
-            vid.swap_rb = camera.swap_rb
-
-            vid.vflip = camera.vflip
-            vid.hflip = camera.hflip
-
+        camera.set_limits_by_zoom(0, 0, 0, self.canvas)
         self._camera_zoom_coefficients = camera.zoom_coefficients
-
         return camera
+
+    def _lumen_detector_default(self):
+        ld = LumenDetector()
+        ld.pixel_depth = self.video.pixel_depth
+        return ld
 
     def _video_default(self):
         v = Video()
+        self.canvas.video = v
         return v
 
     def _video_server_default(self):
@@ -684,10 +884,10 @@ class VideoStageManager(StageManager):
                                     canvas=self.canvas,
                                     application=self.application)
 
-    def _zoom_calibration_manager_default(self):
-        if self.parent.mode != 'client':
-            from pychron.mv.zoom.zoom_calibration import ZoomCalibrationManager
-            return ZoomCalibrationManager(laser_manager=self.parent)
+            # def _zoom_calibration_manager_default(self):
+            #     if self.parent.mode != 'client':
+            #         from pychron.mv.zoom.zoom_calibration import ZoomCalibrationManager
+            #         return ZoomCalibrationManager(laser_manager=self.parent)
 
 # ===============================================================================
 # calcualte camera params

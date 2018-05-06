@@ -15,6 +15,9 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
+from __future__ import print_function
+import re
 import time
 
 from chaco.array_data_source import ArrayDataSource
@@ -29,7 +32,6 @@ from pychron.pipeline.plot.plotter.ticks import TICKS
 from pychron.pychron_constants import PLUSMINUS, SIGMA
 
 N = 500
-
 
 PEAK_CENTER = 'Peak Center'
 ANALYSIS_TYPE = 'Analysis Type'
@@ -114,6 +116,10 @@ class BaseSeries(BaseArArFigure):
         self.graph.refresh()
 
 
+RATIO_RE = re.compile(r'(?P<ni>[A-Za-z]+)(?P<nd>\d+)\/(?P<di>[A-Za-z]+)(?P<dd>\d+)(?P<rem>[\S\s]*)')
+ISOTOPE_RE = re.compile(r'(?P<ni>[A-Za-z]+)(?P<nd>\d+)(?P<rem>[\S\s]*)')
+
+
 class Series(BaseSeries):
     # _omit_key = 'omit_series'
 
@@ -137,10 +143,15 @@ class Series(BaseSeries):
             elif po.use_percent_dev:
                 ytitle = '{} Dev %'.format(ytitle)
 
+            kw = {'padding': self.options.paddings(),
+                  'ytitle': ytitle}
+
             if self.options.use_time_axis:
-                p = graph.new_plot(ytitle=ytitle, xtitle='Time (hrs)')
+                kw['xtitle'] = 'Time (hrs)'
             else:
-                p = graph.new_plot(ytitle=ytitle, xtitle='N')
+                kw['xtitle'] = 'N'
+
+            p = graph.new_plot(**kw)
 
             if i == 0:
                 self._add_info(p)
@@ -155,7 +166,30 @@ class Series(BaseSeries):
                 # graph.set_y_limits(min_=-1, max_=7, plotid=i)
 
             p.value_range.tight_bounds = False
-            self._setup_plot(i, p, po)
+            self._setup_plot(i, p, po, ytitle)
+
+    def _setup_plot(self, pid, pp, po, ytitle):
+
+        match = RATIO_RE.match(ytitle)
+        if match:
+            ytitle = '<sup>{}</sup>{}/<sup>{}</sup>{}'.format(match.group('nd'),
+                                                              match.group('ni'),
+                                                              match.group('dd'),
+                                                              match.group('di'))
+            if match.group('rem'):
+                ytitle = '{}{}'.format(ytitle, match.group('rem'))
+        else:
+            match = ISOTOPE_RE.match(ytitle)
+            if match:
+                ytitle = '<sup>{}</sup>{}'.format(match.group('nd'), match.group('ni'))
+                if match.group('rem'):
+                    ytitle = '{}{}'.format(ytitle, match.group('rem'))
+
+        super(Series, self)._setup_plot(pid, pp, po)
+        if '<sup>' in ytitle or '<sub>' in ytitle:
+            self._set_ml_title(ytitle, pid, 'y')
+        else:
+            self.graph.set_y_title(ytitle, plotid=pid)
 
     def plot(self, plots, legend=None):
         """
@@ -202,8 +236,8 @@ class Series(BaseSeries):
                     m = ys.mean()
                     ys = ys - m
                     if po.use_percent_dev:
-                        ys = ys/m * 100
-                        yerr = yerr/m * 100
+                        ys = ys / m * 100
+                        yerr = yerr / m * 100
 
                 kw = dict(y=ys, yerror=yerr, type='scatter',
                           fit='{}_{}'.format(po.fit, po.error_type),
@@ -249,16 +283,18 @@ class Series(BaseSeries):
                 mi, mx = min(ys - 2 * yerr), max(ys + 2 * yerr)
                 graph.set_y_limits(min_=mi, max_=mx, pad='0.1', plotid=pid)
 
-        except (KeyError, ZeroDivisionError, AttributeError), e:
+        except (KeyError, ZeroDivisionError, AttributeError) as e:
             import traceback
 
             traceback.print_exc()
-            print 'Series', e
+            print('Series', e)
 
     def update_graph_metadata(self, obj, name, old, new):
         sorted_ans = self.sorted_analyses
         if obj:
-            self._filter_metadata_changes(obj, sorted_ans)
+            sel = self._filter_metadata_changes(obj, sorted_ans)
+            for p in self.graph.plots:
+                p.default_index.metadata['selections'] = sel
 
     # private
     def _add_info(self, plot):
@@ -270,6 +306,7 @@ class Series(BaseSeries):
                     pl = FlowPlotLabel(text='\n'.join(ts),
                                        overlay_position='inside top',
                                        hjustify='left',
+                                       font=self.options.error_info_font,
                                        component=plot)
                     plot.overlays.append(pl)
 
@@ -285,6 +322,5 @@ class Series(BaseSeries):
             attr = ATTR_MAPPING[attr]
 
         return super(Series, self)._unpack_attr(attr)
-
 
 # ============= EOF =============================================

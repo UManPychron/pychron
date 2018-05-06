@@ -15,6 +15,8 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import time
 
@@ -23,6 +25,7 @@ import time
 # ============= local library imports  ==========================
 from pychron.experiment.utilities.identifier import make_runid
 from pychron.pychron_constants import ALPHAS
+import six
 
 
 # class GraphicalRecordView(object):
@@ -97,8 +100,6 @@ class DVCIsotopeRecordView:
         #     self.timestampf = 0
         #     self.delta_time = 0
         self.record_id = ''
-        #     self.sample = ''
-        #     self.project = ''
         #     self.irradiation_info = ''
         #     self.irradiation = ''
         #     self.irradiation_level = ''
@@ -107,6 +108,7 @@ class DVCIsotopeRecordView:
         #     self.extract_device = ''
         #     self.comment = ''
         #
+
         self.review_status = 0
 
     #
@@ -115,14 +117,10 @@ class DVCIsotopeRecordView:
     #     self.duration = 0
 
     def __getattr__(self, item):
-        try:
-            return getattr(self.dbrecord, item)
-        except BaseException, e:
-            import traceback
-            print 'IsotopeRecord error: {}. {}'.format(e, traceback.format_exc())
+        return getattr(self.dbrecord, item)
 
     def init(self):
-        if self.increment >= 0:
+        if self.increment is not None and self.increment >= 0:
             self.step = ALPHAS[self.increment]
         else:
             self.step = ''
@@ -131,7 +129,9 @@ class DVCIsotopeRecordView:
         if self.use_repository_suffix:
             rid = '{}-{}'.format(rid, self.repository_identifier)
         self.record_id = rid
+
         self.tag = self.dbrecord.tag
+        # self.position = self.dbrecord.position
 
     def set_tag(self, tag):
         self.tag = tag
@@ -242,7 +242,7 @@ class IsotopeRecordView(object):
             if sam:
                 self.sample = sam.name
                 if sam.project:
-                    if isinstance(sam.project, (str, unicode)):
+                    if isinstance(sam.project, (str, six.text_type)):
                         self.project = sam.project.lower()
                     else:
                         self.project = sam.project.name.lower()
@@ -263,7 +263,7 @@ class IsotopeRecordView(object):
                 self.mass_spectrometer = meas.mass_spectrometer.name.lower()
                 try:
                     self.analysis_type = meas.analysis_type.name
-                except AttributeError, e:
+                except AttributeError as e:
                     pass
                     # print 'IsotopeRecord create meas 1 {}'.format(e)
 
@@ -276,7 +276,7 @@ class IsotopeRecordView(object):
                 try:
                     if ext.extraction_device:
                         self.extract_device = ext.extraction_device.name
-                except AttributeError, e:
+                except AttributeError as e:
                     pass
                     # print 'IsotopeRecord create ext 2 {}'.format(e)
 
@@ -285,20 +285,20 @@ class IsotopeRecordView(object):
                 if meas:
                     try:
                         self.meas_script_name = self._clean_script_name(meas.script.name)
-                    except AttributeError, e:
+                    except AttributeError as e:
                         pass
                         # print 'IsotopeRecord create meas 2 {}'.format(e)
                 else:
-                    print 'measurment is None'
+                    print('measurment is None')
 
                 if ext is not None:
                     try:
                         self.extract_script_name = self._clean_script_name(ext.script.name)
-                    except AttributeError, e:
+                    except AttributeError as e:
                         pass
                         # print 'IsotopeRecord create ext 1 {}'.format(e)
                 else:
-                    print 'extraction is None'
+                    print('extraction is None')
 
                     # self.flux_fit_status = get_flux_fit_status(dbrecord)
                     # sh = dbrecord.selected_histories
@@ -307,11 +307,11 @@ class IsotopeRecordView(object):
                     # self.iso_fit_status = get_selected_history_item(sh, 'selected_fits_id')
 
             return True
-        except Exception, e:
+        except Exception as e:
             import traceback
 
             traceback.print_exc()
-            print e
+            print(e)
 
     def _clean_script_name(self, name):
         n = name.replace('{}_'.format(self.mass_spectrometer.lower()), '')

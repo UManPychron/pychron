@@ -14,6 +14,9 @@
 # limitations under the License.
 # ===============================================================================
 # ============= enthought library imports =======================
+from __future__ import absolute_import
+from __future__ import print_function
+from chaco.lineplot import LinePlot
 from numpy import linspace
 from traits.api import List, Any, Event, Callable, Dict
 
@@ -28,6 +31,7 @@ from pychron.graph.tools.rect_selection_tool import RectSelectionTool, \
     RectSelectionOverlay
 from pychron.graph.tools.regression_inspector import RegressionInspectorTool, \
     RegressionInspectorOverlay
+from six.moves import zip
 
 
 class NoRegressionCTX(object):
@@ -50,7 +54,6 @@ class RegressionGraph(Graph, RegressionContextMenuMixin):
     indices = List
     filters = List
     selected_component = Any
-    # regressors = List
     regression_results = Event
     suppress_regression = False
 
@@ -222,8 +225,8 @@ class RegressionGraph(Graph, RegressionContextMenuMixin):
         # for idx in range(series, -1, -1):
         key = 'data{}'.format(series)
         # print 'set fit', fi, plotid, key, plot.plots.keys()
-        print 'a', key, plot.plots
-        print 'b', key in plot.plots
+        print('a', key, plot.plots)
+        print('b', key in plot.plots)
 
         if key in plot.plots:
             scatter = plot.plots[key][0]
@@ -236,8 +239,8 @@ class RegressionGraph(Graph, RegressionContextMenuMixin):
             #     line = plot.plots[lkey][0]
             #     line.regressor.error_calc_type = fi
 
-                # if redraw:
-                #     self.redraw()
+            # if redraw:
+            #     self.redraw()
 
     def set_fit(self, fi, plotid=0, series=0, redraw=True):
 
@@ -245,7 +248,6 @@ class RegressionGraph(Graph, RegressionContextMenuMixin):
         plot = self.plots[plotid]
         # for idx in range(series, -1, -1):
         key = 'data{}'.format(series)
-        # print 'set fit', fi, plotid, key, plot.plots.keys()
         if key in plot.plots:
             scatter = plot.plots[key][0]
             # print key
@@ -255,14 +257,16 @@ class RegressionGraph(Graph, RegressionContextMenuMixin):
                     line = plot.plots[lkey][0]
                     line.regressor = None
 
-                # print self, 'fit for {}={}, {}'.format(key, fi, scatter)
+                print('fit for {}={}, {}'.format(key, fi, scatter))
                 scatter.fit = fi
-                scatter.index.metadata['selections'] = []
-                scatter.index.metadata['filtered'] = None
+                # scatter.index.metadata['selections'] = []
+                # scatter.index.metadata['filtered'] = None
 
                 # if redraw:
                 #     self.redraw()
                 # break
+        else:
+            print('invalid key', fi, plotid, key, plot.plots.keys())
 
     def get_fit(self, plotid=0, series=0):
         try:
@@ -271,6 +275,17 @@ class RegressionGraph(Graph, RegressionContextMenuMixin):
             return scatter.fit
         except IndexError:
             pass
+
+    _outside_regressor = False
+
+    def set_regressor(self, reg, plotid=0):
+        # print('setting regressor to {} {}'.format(plotid, id(reg)))
+        self._outside_regressor = True
+        plot = self.plots[plotid]
+        for pp in plot.plots.values():
+            for ppp in pp:
+                if isinstance(ppp, LinePlot):
+                    ppp.regressor = reg
 
     def clear(self):
         # self.regressors = []
@@ -308,9 +323,9 @@ class RegressionGraph(Graph, RegressionContextMenuMixin):
         regs = []
         for i, plot in enumerate(self.plots):
             ps = plot.plots
-            ks = ps.keys()
+            ks = list(ps.keys())
             try:
-                scatters, idxes = zip(*[(ps[k][0], k[4:]) for k in ks if k.startswith('data')])
+                scatters, idxes = list(zip(*[(ps[k][0], k[4:]) for k in ks if k.startswith('data')]))
 
                 fls = [ps['fit{}'.format(idx)][0] for idx in idxes]
                 for si, fl in zip(scatters, fls):
@@ -318,7 +333,7 @@ class RegressionGraph(Graph, RegressionContextMenuMixin):
                         r = self._plot_regression(plot, si, fl)
                         regs.append((plot, r))
 
-            except ValueError, e:
+            except ValueError as e:
                 # add a float instead of regressor to regs
                 try:
                     si = ps[ks[0]][0]
@@ -345,12 +360,14 @@ class RegressionGraph(Graph, RegressionContextMenuMixin):
         fit, err = convert_fit(scatter.fit)
 
         if fit is None:
-            print 'fit is none, {}'.format(scatter.fit)
+            print('fit is none, {}'.format(scatter.fit))
             return
 
         r = None
         if line and hasattr(line, 'regressor'):
             r = line.regressor
+            # if self._outside_regressor:
+            #     print 'line has {} regressor={}'.format(id(plot), id(r))
 
         if fit in [1, 2, 3, 4]:
             r = self._poly_regress(scatter, r, fit)
@@ -360,6 +377,7 @@ class RegressionGraph(Graph, RegressionContextMenuMixin):
 
         elif isinstance(fit, BaseRegressor):
             r = self._custom_regress(scatter, r, fit)
+
         else:
             r = self._mean_regress(scatter, r, fit)
 
@@ -386,8 +404,8 @@ class RegressionGraph(Graph, RegressionContextMenuMixin):
                 try:
                     line.index.set_data(fx)
                     line.value.set_data(fy)
-                except BaseException, e:
-                    print 'Regerssion Exception, {}'.format(e)
+                except BaseException as e:
+                    print('Regerssion Exception, {}'.format(e))
                     return
 
                 if hasattr(line, 'error_envelope'):
@@ -434,7 +452,6 @@ class RegressionGraph(Graph, RegressionContextMenuMixin):
     def _poly_regress(self, scatter, r, fit):
         from pychron.core.regression.ols_regressor import PolynomialRegressor
         from pychron.core.regression.wls_regressor import WeightedPolynomialRegressor
-
         if hasattr(scatter, 'yerror'):
             if r is None or not isinstance(r, WeightedPolynomialRegressor):
                 r = WeightedPolynomialRegressor()

@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from pyface.tasks.traits_dock_pane import TraitsDockPane
 from pyface.tasks.traits_task_pane import TraitsTaskPane
 from traits.api import Int, Property
@@ -79,7 +80,7 @@ class SelectionPane(TraitsDockPane):
         local_grp = VGroup(UItem('local_names',
                                  editor=TabularEditor(adapter=RepoAdapter(),
                                                       selected='selected_local_repository_name',
-                                                      # editable=False
+                                                      editable=False
                                                       )),
                            show_border=True, label='Local')
 

@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from pyface.tasks.traits_dock_pane import TraitsDockPane
 from pyface.tasks.traits_task_pane import TraitsTaskPane
 from traits.api import Any
@@ -52,6 +53,18 @@ class CanvasDockPane(TraitsDockPane):
                        editor=InstanceEditor(),
                        style='custom',
                        width=500))
+        return v
+
+
+class CryoPane(TraitsDockPane):
+    name = 'Cryo'
+    id = 'pychron.extraction_line.cryo'
+
+    def traits_view(self):
+        v = View(UItem('cryo_manager',
+                       editor=InstanceEditor(),
+                       style='custom',
+                       defined_when='cryo_manager'))
         return v
 
 

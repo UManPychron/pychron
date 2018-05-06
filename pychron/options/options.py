@@ -15,15 +15,17 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 from itertools import groupby
-
 import yaml
+
 from enable.markers import marker_names
 from traits.api import HasTraits, Str, Int, Bool, Float, Property, Enum, List, Range, \
-    Color, Button
+    Color, Button, Instance
 from traitsui.api import View, Item, HGroup, VGroup, EnumEditor, Spring, Group, \
-    spring, UItem, ListEditor, InstanceEditor
+    spring, UItem, ListEditor, InstanceEditor, CheckListEditor
 from traitsui.extras.checkbox_column import CheckboxColumn
 from traitsui.handler import Controller
 from traitsui.table_column import ObjectColumn
@@ -32,7 +34,9 @@ from pychron.core.helpers.color_generators import colornames
 from pychron.core.ui.table_editor import myTableEditor
 from pychron.envisage.icon_button_editor import icon_button_editor
 from pychron.options.aux_plot import AuxPlot
+from pychron.options.layout import FigureLayout
 from pychron.pychron_constants import NULL_STR, ERROR_TYPES, FONTS, SIZES, ALPHAS
+from six.moves import range
 
 
 def _table_column(klass, *args, **kw):
@@ -57,6 +61,10 @@ class SubOptions(Controller):
 
 
 class TitleSubOptions(SubOptions):
+    def traits_view(self):
+        v = self._make_view(self._get_title_group())
+        return v
+
     def _get_title_group(self):
         title_grp = HGroup(Item('auto_generate_title',
                                 tooltip='Auto generate a title based on the analysis list'),
@@ -84,6 +92,18 @@ class GroupSubOptions(SubOptions):
 
 
 class AppearanceSubOptions(SubOptions):
+    def _get_layout_group(self):
+        # rc_grp = VGroup(HGroup(Item('object.layout.rows',
+        #                             enabled_when='object.layout.row_enabled'),
+        #                        Item('object.layout.columns',
+        #                             enabled_when='object.layout.column_enabled'
+        #                             ),
+        #                        Item('object.layout.fixed')),
+        #                 label='Layout', show_border=True)
+        # return rc_grp
+        return VGroup(UItem('layout', style='custom'))
+
+
     def _get_xfont_group(self):
         v = VGroup(self._create_axis_group('x', 'title'),
                    self._create_axis_group('x', 'tick'),
@@ -137,6 +157,7 @@ class AppearanceSubOptions(SubOptions):
                       label='Fonts', show_border=True)
 
         g = VGroup(self._get_bg_group(),
+                   self._get_layout_group(),
                    self._get_padding_group(),
                    self._get_grid_group())
 
@@ -157,6 +178,8 @@ class MainOptions(SubOptions):
                 checkbox_column(name='y_error', label='Y Err.'),
                 checkbox_column(name='ytick_visible', label='Y Tick'),
                 checkbox_column(name='ytitle_visible', label='Y Title'),
+                checkbox_column(name='y_axis_right', label='Y Right'),
+
                 checkbox_column(name='has_filter', label='Filter', editable=False)
                 # object_column(name='filter_str', label='Filter')
                 ]
@@ -176,6 +199,10 @@ class MainOptions(SubOptions):
                                label='Y Limits'),
                         show_border=True))
         return v
+
+    def _get_analysis_group(self):
+        return HGroup(UItem('analysis_types', style='custom', editor=CheckListEditor(name='available_types')),
+                      show_border=True, label='Analysis Types')
 
     def _get_global_group(self):
         return
@@ -242,8 +269,11 @@ class BaseOptions(HasTraits):
     def set_detectors(self, dets):
         pass
 
+    def set_analysis_types(self, atypes):
+        pass
+
     def _fontname_changed(self):
-        print 'setting font name', self.fontname
+        print('setting font name', self.fontname)
         self._set_fonts(self.fontname)
         for attr in self.traits():
             if attr.endswith('_fontname'):
@@ -357,13 +387,17 @@ class FigureOptions(BaseOptions):
                         'Sanidine': 'San'}
 
         for gid, ais in groupby(analyses, key=lambda x: x.group_id):
-            ref = ais.next()
+            ref = next(ais)
             d = {}
             for ai in attrs:
                 if ai == 'alphacounter':
                     v = ALPHAS[n]
                 elif ai == 'numericcounter':
                     v = n
+                elif ai == '<space>':
+                    v = ' '
+                elif ai == 'runid':
+                    v = ref.record_id
                 else:
                     v = getattr(ref, ai)
                     if ai == 'material':
@@ -461,6 +495,12 @@ class AuxPlotFigureOptions(FigureOptions):
     aux_plot_klass = AuxPlot
     selected = List
 
+    layout = Instance(FigureLayout, ())
+
+    error_info_font = Property
+    error_info_fontname = Enum(*FONTS)
+    error_info_fontsize = Enum(*SIZES)
+
     def add_aux_plot(self, name, i=0, **kw):
         plt = self.aux_plot_klass(name=name, **kw)
         plt.plot_enabled = True
@@ -484,6 +524,9 @@ class AuxPlotFigureOptions(FigureOptions):
         return list(reversed([pi for pi in self.aux_plots
                               if pi.name and pi.name != NULL_STR and pi.plot_enabled]))
 
+    def _get_error_info_font(self):
+        return '{} {}'.format(self.error_info_fontname, self.error_info_fontsize)
+
     def _aux_plots_default(self):
         return [self.aux_plot_klass() for _ in range(12)]
 
@@ -505,10 +548,6 @@ class AgeOptions(AuxPlotFigureOptions):
 
     analysis_label_format = Str
     analysis_label_display = Str
-
-    error_info_font = Property
-    error_info_fontname = Enum(*FONTS)
-    error_info_fontsize = Enum(*SIZES)
 
     label_font = Property
     label_fontname = Enum(*FONTS)
@@ -532,8 +571,5 @@ class AgeOptions(AuxPlotFigureOptions):
     def _get_label_font(self):
         return '{} {}'.format(self.label_fontname, self.label_fontsize)
 
-    def _get_error_info_font(self):
-        return '{} {}'.format(self.error_info_fontname,
-                              self.error_info_fontsize)
 
 # ============= EOF =============================================

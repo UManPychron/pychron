@@ -21,6 +21,8 @@ add a path verification function
 make sure directory exists and build if not
 """
 # ============= standard library imports ========================
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import pickle
 import shutil
@@ -36,7 +38,7 @@ def get_file_text(d):
     try:
         mod = __import__('pychron.file_defaults', fromlist=[d])
         txt = getattr(mod, d)
-    except BaseException, e:
+    except BaseException as e:
         pass
     return txt
 
@@ -133,6 +135,7 @@ class Paths(object):
     conditionals_dir = None
     hops_dir = None
     fits_dir = None
+    spectrometer_scripts_dir = None
     # ==============================================================================
     # setup
     # ==============================================================================
@@ -157,10 +160,12 @@ class Paths(object):
     furnace_map_dir = None
     user_points_dir = None
     irradiation_tray_maps_dir = None
+
     # ==============================================================================
     # data
     # ==============================================================================
     data_dir = None
+    csv_data_dir = None
     report_dir = None
     modeling_data_dir = None
     argus_data_dir = None
@@ -168,8 +173,8 @@ class Paths(object):
     snapshot_dir = None
     video_dir = None
     stage_visualizer_dir = None
-    default_workspace_dir = None
-    workspace_root_dir = None
+    # default_workspace_dir = None
+    # workspace_root_dir = None
     spectrometer_scans_dir = None
     furnace_scans_dir = None
     processed_dir = None
@@ -262,31 +267,36 @@ class Paths(object):
     # ('screen_formatting_options', 'SCREEN_FORMATTING_DEFAULTS', False),
     # ('presentation_formatting_options', 'PRESENTATION_FORMATTING_DEFAULTS', False),
     # ('display_formatting_options', 'DISPLAY_FORMATTING_DEFAULTS', False))
-    icfactor_template = None
-    blanks_template = None
-    iso_evo_template = None
-    ideogram_template = None
-    flux_template = None
-    vertical_flux_template = None
-    xy_scatter_template = None
-    csv_ideogram_template = None
-    spectrum_template = None
-    isochron_template = None
-    inverse_isochron_template = None
-    analysis_table_template = None
-    interpreted_age_table_template = None
-    interpreted_age_ideogram_template = None
-    auto_ideogram_template = None
-    auto_series_template = None
-    auto_report_template = None
-    report_template = None
-    series_template = None
-    geochron_template = None
-    yield_template = None
-    csv_analyses_export_template = None
-    radial_template = None
+
+    # icfactor_template = None
+    # blanks_template = None
+    # iso_evo_template = None
+    # ideogram_template = None
+    # flux_template = None
+    # vertical_flux_template = None
+    # xy_scatter_template = None
+    # csv_ideogram_template = None
+    # spectrum_template = None
+    # isochron_template = None
+    # inverse_isochron_template = None
+    # analysis_table_template = None
+    # interpreted_age_table_template = None
+    # interpreted_age_ideogram_template = None
+    # auto_ideogram_template = None
+    # auto_series_template = None
+    # auto_report_template = None
+    # report_template = None
+    # series_template = None
+    # geochron_template = None
+    # yield_template = None
+    # csv_analyses_export_template = None
+    # radial_template = None
+    # regression_series_template = None
+    # correction_factors_template = None
+    # analysis_metadata_template = None
 
     furnace_sample_states = None
+    valid_pi_names = None
 
     def write_default_file(self, p, default, overwrite=False):
         return self._write_default_file(p, default, overwrite)
@@ -322,6 +332,7 @@ class Paths(object):
         self.conditionals_dir = join(scripts_dir, 'conditionals')
         self.hops_dir = join(self.measurement_dir, 'hops')
         self.fits_dir = join(self.measurement_dir, 'fits')
+        self.spectrometer_scripts_dir = join(scripts_dir, 'spectrometer')
 
         self.experiment_dir = join(root, 'experiments')
         self.experiment_rem_dir = join(self.experiment_dir, 'rem')
@@ -378,6 +389,7 @@ class Paths(object):
         # data
         # ==============================================================================
         self.data_dir = data_dir = join(root, 'data')
+        self.csv_data_dir = join(data_dir, 'csv')
         self.report_dir = join(data_dir, 'reports')
         self.spectrometer_scans_dir = join(data_dir, 'spectrometer_scans')
         self.furnace_scans_dir = join(data_dir, 'furnace_scans')
@@ -464,6 +476,7 @@ class Paths(object):
 
         self.furnace_firmware = join(self.setup_dir, 'furnace_firmware.yaml')
         self.furnace_sample_states = join(self.appdata_dir, 'furnace_sample_states.yaml')
+        self.valid_pi_names = join(self.setup_dir, 'valid_pi_names.yaml')
 
         # =======================================================================
         # pipeline templates
@@ -520,15 +533,21 @@ class Paths(object):
         # self.write_file_defaults(self.plot_factory_defaults, force=True)
 
     def write_file_defaults(self, fs, force=False):
-        for p, d, o in fs:
-            print p, d, o
-            txt = get_file_text(d)
-            try:
-                p = getattr(paths, p)
-            except AttributeError, e:
-                print 'write_file_defaults', e
+        for args in fs:
+            if len(args) == 3:
+                p, d, o = args
+            else:
+                d, o = args
+                p = None
 
-            self.write_default_file(p, txt, o or force)
+            txt = get_file_text(d)
+            if p is not None:
+                try:
+                    p = getattr(paths, p)
+                except AttributeError as e:
+                    print('write_file_defaults', e)
+
+            self._write_default_file(p, txt, o or force)
 
     def _write_default_files(self):
         from pychron.file_defaults import DEFAULT_INITIALIZATION, DEFAULT_STARTUP_TESTS, SYSTEM_HEALTH
@@ -539,9 +558,7 @@ class Paths(object):
                      (self.simple_ui_file, SIMPLE_UI_DEFAULT),
                      (self.edit_ui_defaults, EDIT_UI_DEFAULT),
                      (self.task_extensions_file, TASK_EXTENSION_DEFAULT),
-                     (self.identifiers_file, IDENTIFIERS_DEFAULT),
-                     # (self.pipeline_template_file, PIPELINE_TEMPLATES)
-                     ):
+                     (self.identifiers_file, IDENTIFIERS_DEFAULT)):
             overwrite = d in (SYSTEM_HEALTH, SIMPLE_UI_DEFAULT,)
             # overwrite = d in (SYSTEM_HEALTH, SIMPLE_UI_DEFAULT,)
             # print p
@@ -550,7 +567,6 @@ class Paths(object):
     def _write_default_file(self, p, default, overwrite=False):
         if not path.isfile(p) or overwrite:
             with open(p, 'w') as wfile:
-                print 'writing default {}'.format(p)
                 wfile.write(default)
                 return True
 
@@ -580,8 +596,6 @@ def build_directories():
 
 
 def migrate_hidden():
-    print 'migrating hidden directory'
-
     hd = os.path.join(paths.root_dir, '.hidden')
     for root, dirs, files in os.walk(hd):
         if root == hd:
@@ -597,7 +611,7 @@ def migrate_hidden():
                 src = os.path.join(root, f)
                 dst = os.path.join(droot, f)
                 if not os.path.isfile(dst):
-                    print 'moving {} to {}'.format(src, dst)
+                    print('moving {} to {}'.format(src, dst))
                     shutil.move(src, dst)
 
 

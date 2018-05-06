@@ -14,6 +14,7 @@
 # limitations under the License.
 # ===============================================================================
 
+from __future__ import absolute_import
 import datetime
 import os
 
@@ -29,6 +30,8 @@ from pychron.experiment.stats import ExperimentStats
 from pychron.experiment.utilities.frequency_generator import frequency_index_gen
 from pychron.paths import paths
 from pychron.pychron_constants import NULL_STR, LINE_STR
+from six.moves import map
+from six.moves import zip
 
 
 def extract_meta(line_gen):
@@ -42,7 +45,7 @@ def extract_meta(line_gen):
     return yaml.load(metastr), metastr
 
 
-__METASTR__ = '''
+METASTR = '''
 username: {username:}
 use_email: {use_email:}
 email: {email:}
@@ -57,6 +60,7 @@ delay_after_air: {delay_after_air:}
 extract_device: {extract_device:}
 tray: {tray:}
 load: {load:}
+note: {note:}
 '''
 
 
@@ -64,14 +68,16 @@ class BaseExperimentQueue(RunBlock):
     selected = List
 
     automated_runs = List
-    cleaned_automated_runs = Property(depends_on='automated_runs[]')
+    cleaned_automated_runs = Property  # (depends_on='automated_runs[]')
 
     username = String
     email = String
     use_group_email = Bool
     use_email = Bool
 
+    note = Str
     tray = Str
+
     delay_before_analyses = CInt(5)
     delay_between_analyses = CInt(30)
     delay_after_blank = CInt(15)
@@ -96,6 +102,10 @@ class BaseExperimentQueue(RunBlock):
 
     _no_update = False
     _frequency_group_counter = 0
+
+    @property
+    def no_update(self):
+        return self._no_update
 
     # ===============================================================================
     # persistence
@@ -271,15 +281,13 @@ class BaseExperimentQueue(RunBlock):
         return meta
 
     def _load_meta(self, meta):
-        # load sample map
-        self._load_map(meta)
-
         # default = lambda x: str(x) if x else ' '
         default_int = lambda x: x if x is not None else 1
         key_default = lambda k: lambda x: str(x) if x else k
         bool_default = lambda x: bool(x) if x else False
         default = key_default('')
 
+        self._set_meta_param('note', meta, default)
         self._set_meta_param('tray', meta, default)
         self._set_meta_param('extract_device', meta, key_default('Extract Device'))
         self._set_meta_param('mass_spectrometer', meta, key_default('Spectrometer'))
@@ -294,27 +302,31 @@ class BaseExperimentQueue(RunBlock):
         self._set_meta_param('load_name', meta, default, metaname='load')
         self._set_meta_param('queue_conditionals_name', meta, default)
         self._set_meta_param('repository_identifier', meta, default)
+
+        # # load sample map
+        # self._load_map()
+
         self._load_meta_hook(meta)
 
     def _load_meta_hook(self, meta):
         pass
 
-    def _load_map(self, meta):
-        from pychron.stage.maps.laser_stage_map import LaserStageMap
-        from pychron.experiment.map_view import MapView
-
-        def create_map(name):
-            if name:
-                if not name.endswith('.txt'):
-                    name = '{}.txt'.format(name)
-                name = os.path.join(paths.map_dir, name)
-
-                if os.path.isfile(name):
-                    sm = LaserStageMap(file_path=name)
-                    mv = MapView(stage_map=sm)
-                    return mv
-
-        self._set_meta_param('sample_map', meta, create_map, metaname='tray')
+    # def _load_map(self):
+    #     name = self.tray
+    #
+    #     if name:
+    #         name = str(name)
+    #         if not name.endswith('.txt'):
+    #             name = '{}.txt'.format(name)
+    #
+    #         name = os.path.join(paths.map_dir, name)
+    #         if os.path.isfile(name):
+    #             from pychron.stage.maps.laser_stage_map import LaserStageMap
+    #             from pychron.experiment.map_view import MapView
+    #
+    #             sm = LaserStageMap(file_path=name)
+    #             mv = MapView(stage_map=sm)
+    #             self.map_view = mv
 
     def _set_meta_param(self, attr, meta, func, metaname=None):
         if metaname is None:
@@ -359,7 +371,7 @@ class BaseExperimentQueue(RunBlock):
             seq.extend(('reprate', 'mask', 'attenuator', 'image'))
 
         seq = [(v, v) if not isinstance(v, tuple) else v for v in seq]
-        header, attrs = zip(*seq)
+        header, attrs = list(zip(*seq))
         return header, attrs
 
     def _meta_dumper(self, wfile):
@@ -367,7 +379,7 @@ class BaseExperimentQueue(RunBlock):
         if ms in ('Spectrometer', LINE_STR):
             ms = ''
 
-        s = __METASTR__.format(
+        s = METASTR.format(
             username=self.username,
             use_email=self.use_email,
             email=self.email,
@@ -381,7 +393,8 @@ class BaseExperimentQueue(RunBlock):
             delay_after_air=self.delay_after_air,
             extract_device=self.extract_device,
             tray=self.tray or '',
-            load=self.load_name or '')
+            load=self.load_name or '',
+            note=self.note)
 
         if wfile:
             wfile.write(s)

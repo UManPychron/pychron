@@ -18,6 +18,8 @@
 # ============= enthought library imports =======================
 
 # ============= standard library imports ========================
+from __future__ import absolute_import
+from __future__ import print_function
 from copy import copy
 
 from uncertainties import ufloat, std_dev, nominal_value
@@ -29,6 +31,7 @@ from pychron.processing.argon_calculations import calculate_F, abundance_sensiti
 from pychron.processing.isotope import Blank
 from pychron.processing.isotope_group import IsotopeGroup
 from pychron.pychron_constants import ARGON_KEYS
+import six
 
 
 class ArArAge(IsotopeGroup):
@@ -52,11 +55,11 @@ class ArArAge(IsotopeGroup):
 
     timestamp = None
 
-    kca = None
-    cak = None
-    kcl = None
-    clk = None
-    rad40_percent = None
+    kca = 0
+    cak = 0
+    kcl = 0
+    clk = 0
+    rad40_percent = 0
 
     # non_ar_isotopes = Dict
     # computed = Dict
@@ -72,14 +75,14 @@ class ArArAge(IsotopeGroup):
     uage_w_j_err = None
     uage_wo_j_err = None
 
-    age = None
-    age_err = None
-    age_err_wo_j = None
-    age_err_wo_irrad = None
-    age_err_wo_j_irrad = None
+    age = 0
+    age_err = 0
+    age_err_wo_j = 0
+    age_err_wo_irrad = 0
+    age_err_wo_j_irrad = 0
 
-    ar39decayfactor = None
-    ar37decayfactor = None
+    ar39decayfactor = 0
+    ar37decayfactor = 0
 
     # arar_constants =None
 
@@ -142,21 +145,30 @@ class ArArAge(IsotopeGroup):
     def get_error_component(self, key):
         # for var, error in self.uage.error_components().items():
         #     print var.tag
+        uage = self.uage_w_j_err
         ae = 0
-        if self.uage:
-            v = next((error for (var, error) in self.uage.error_components().items()
+        if uage:
+            # for var, err in uage.error_components().items():
+            #     if var.tag == key:
+            #         # print('var', key, var.tag, var)
+            #         break
+            # else:
+            #     print('tags', [var.tag for (var,error) in  uage.error_components().items()])
+            #     print('not found', key)
+
+            v = next((error for (var, error) in uage.error_components().items()
                       if var.tag == key), 0)
 
-            ae = self.uage.std_dev
-
+            ae = uage.std_dev
+            # print(key, v)
         if ae:
             return v ** 2 / ae ** 2 * 100
         else:
             return 0
 
-    def set_ic_factor(self, det, v, e):
-        for iso in self.get_isotopes(det):
-            iso.ic_factor = ufloat(v, e, tag='icfactor')
+    # def set_ic_factor(self, det, v, e):
+    #     for iso in self.get_isotopes(det):
+    #         iso.ic_factor = ufloat(v, e, tag='icfactor')
 
     def set_temporary_ic_factor(self, k, v, e):
         self.temporary_ic_factors[k] = ufloat(v, e)
@@ -183,7 +195,7 @@ class ArArAge(IsotopeGroup):
                 b.fit = f
 
     def set_j(self, s, e):
-        self.j = ufloat(s, std_dev=e)
+        self.j = ufloat(s, std_dev=e, tag='J')
 
     def get_corrected_ratio(self, n, d):
         isos = self.isotopes
@@ -201,13 +213,9 @@ class ArArAge(IsotopeGroup):
             iso = attr[:-2]
             if iso in self.isotopes:
                 r = self.isotopes[iso].baseline.uvalue
-        elif attr == 'uF':
-            r = self.uF
-        elif attr.startswith('u') and attr != 'uage':
-
-            # elif '/' in attr:
-            #     non_ic_corr = attr.startswith('u')
-            #     if non_ic_corr:
+        elif attr in ('uage_wo_j_err', 'uage_w_j_err', 'uF'):
+            r = getattr(self, attr)
+        elif attr.startswith('u') and ('/' in attr or '_' in attr):
             attr = attr[1:]
             r = self.get_ratio(attr, non_ic_corr=True)
         elif attr == 'icf_40_36':
@@ -236,13 +244,10 @@ class ArArAge(IsotopeGroup):
             r = self.computed[attr]
         elif attr in self.isotopes:
             r = self.isotopes[attr].get_intensity()
-        elif hasattr(self, attr):
-            r = getattr(self, attr)
-        # else:
-        #     iso = self._get_iso_by_detector(attr)
-        #     # iso=next((i for i in self.isotopes if i.detector==attr), None)
-        #     if iso:
-        #         r = ufloat(iso.ys[-1], tag=attr)
+        else:
+            if hasattr(self, attr):
+                r = getattr(self, attr)
+
         return r
 
     def get_interference_corrected_value(self, iso):
@@ -262,7 +267,7 @@ class ArArAge(IsotopeGroup):
         return j
 
     def recalculate_age(self):
-        print 'recacl age', self
+        print('recacl age', self)
         if not self.uF:
             self._calculate_F()
 
@@ -356,16 +361,18 @@ class ArArAge(IsotopeGroup):
 
         return [isotopes[ik].get_intensity() for ik in ARGON_KEYS]
 
-    def _calculate_F(self, iso_intensities=None):
+    def _calculate_F(self, iso_intensities=None, interferences=None):
 
         if iso_intensities is None:
             iso_intensities = self._assemble_isotope_intensities()
 
         if iso_intensities:
-            ifc = self.interference_corrections
+            if interferences is None:
+                interferences = self.interference_corrections
+
             f, f_wo_irrad, non_ar, computed, interference_corrected = calculate_F(iso_intensities,
                                                                                   decay_time=self.decay_days,
-                                                                                  interferences=ifc,
+                                                                                  interferences=interferences,
                                                                                   arar_constants=self.arar_constants,
                                                                                   fixed_k3739=self.fixed_k3739)
 
@@ -390,7 +397,10 @@ class ArArAge(IsotopeGroup):
         iso_intensities[3] *= self.ar37decayfactor
         return iso_intensities
 
-    def _calculate_age(self, use_display_age=False, include_decay_error=None):
+    def calculate_no_interference(self):
+        self._calculate_age(interferences={})
+
+    def _calculate_age(self, use_display_age=False, include_decay_error=None, interferences=None):
         """
             approx 2/3 of the calculation time is in _assemble_ar_ar_isotopes.
             Isotope.get_intensity takes about 5ms.
@@ -413,14 +423,15 @@ class ArArAge(IsotopeGroup):
                                           Ar37=iso_intensities[3],
                                           Ar36=iso_intensities[4])
 
-        f, f_wo_irrad, non_ar, computed, interference_corrected = self._calculate_F(iso_intensities)
+        f, f_wo_irrad, non_ar, computed, interference_corrected = self._calculate_F(iso_intensities,
+                                                                                    interferences=interferences)
 
         self.non_ar_isotopes = non_ar
         self.computed = computed
         self.rad40_percent = computed['rad40_percent']
 
         isotopes = self.isotopes
-        for k, v in interference_corrected.iteritems():
+        for k, v in interference_corrected.items():
             isotopes[k].interference_corrected_value = v
 
         self._set_age_values(f, include_decay_error)
@@ -449,11 +460,13 @@ class ArArAge(IsotopeGroup):
         age = age_equation(j, f, include_decay_error=include_decay_error,
                            # lambda_k=self.lambda_k,
                            arar_constants=arc)
+        self.uage = age
 
         self.age = nominal_value(age)
         self.age_err = std_dev(age)
-        self.age_err_wo_j = float(age.std_dev)
-        self.uage = ufloat(self.age, self.age_err)
+        self.age_err_wo_j = std_dev(age)
+
+        # self.uage = ufloat(self.age, self.age_err)
         self.uage_wo_j_err = ufloat(self.age, self.age_err_wo_j)
 
         # if self.j is not None:
@@ -468,7 +481,7 @@ class ArArAge(IsotopeGroup):
         # j.std_dev = 0
         # self.age_err_wo_j_irrad = age.std_dev
         #
-        for iso in self.isotopes.itervalues():
+        for iso in self.itervalues():
             iso.age_error_component = self.get_error_component(iso.name)
 
     # def _get_isotope_keys(self):

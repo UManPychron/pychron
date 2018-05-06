@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from pyface.ui.qt4.about_dialog import AboutDialog
 from traits.api import List, Str
 # ============= standard library imports ========================

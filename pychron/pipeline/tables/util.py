@@ -16,6 +16,7 @@
 
 # ============= standard library imports ========================
 # ============= local library imports  ==========================
+from __future__ import absolute_import
 from uncertainties import nominal_value, std_dev
 
 
@@ -66,7 +67,10 @@ def icf_value(x, k):
 
 def icf_error(x, k):
     det = k.split('_')[0]
-    return std_dev(x.get_ic_factor(det))
+    v = std_dev(x.get_ic_factor(det))
+    if v < 1e-10:
+        v = 0
+    return v
 
 
 def value(x, k):
@@ -83,5 +87,14 @@ def error(x, k):
         return std_dev(x)
     else:
         return ''
+
+
+def age_value(target_units='Ma'):
+    def wrapper(x, k):
+        v = value(x, k)
+        if v and target_units != x.arar_constants.age_units:
+            v /= x.arar_constants.ma_age_scalar
+        return v
+    return wrapper
 
 # ============= EOF =============================================

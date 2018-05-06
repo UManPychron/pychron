@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from traits.api import HasTraits, Str, Int, Bool, Float, Property, \
     Color, Array
 
@@ -69,6 +70,9 @@ class BaseDetector(HasTraits):
 
     def set_gain(self):
         self._set_gain()
+
+    def get_deflection_correction(self, *args, **kw):
+        return 0
 
     # private
     def _set_gain(self):

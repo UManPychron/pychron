@@ -13,19 +13,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===============================================================================
-from pychron.core.ui import set_qt
-from pychron.core.ui.enum_editor import myEnumEditor
-
-set_qt()
 # ============= enthought library imports =======================
 from traits.api import Str, Property, Button, cached_property, \
-    String, HasTraits, Event, List
+    String, HasTraits, Event, List, Bool
 from traitsui.api import View, HGroup, Label, spring, UItem
 # ============= standard library imports ========================
 import os
 import yaml
 import ast
 # ============= local library imports  ==========================
+from pychron.core.ui.enum_editor import myEnumEditor
 from pychron.core.helpers.filetools import list_directory, add_extension, remove_extension
 from pychron.experiment.script.options_editor import OptionsEditor
 from pychron.paths import paths
@@ -70,6 +67,7 @@ class Script(Loggable):
 
     name_prefix = Property
     _name_prefix = Str
+    use_name_prefix = Bool
     mass_spectrometer = String
     extract_device = String
 
@@ -77,6 +75,7 @@ class Script(Loggable):
     # names = Property(depends_on='mass_spectrometer, directory, refresh_lists')
     names = Property(depends_on='_name_prefix, directory, refresh_lists, mass_spectrometer')
     edit = Button
+    editable = Bool
     kind = 'ExtractionLine'
     shared_logger = True
 
@@ -85,7 +84,6 @@ class Script(Loggable):
 
     def _get_name_prefix(self):
         r = ''
-        # print self.use_name_prefix, self._name_prefix, self.mass_spectrometer
         if self.use_name_prefix:
             r = self._name_prefix if self._name_prefix else '{}_'.format(self.mass_spectrometer.lower())
         return r
@@ -95,6 +93,7 @@ class Script(Loggable):
 
     def get_parameter(self, key, default=None):
         p = self.script_path()
+
         if os.path.isfile(p):
             with open(p, 'r') as rfile:
                 text = rfile.read()
@@ -134,10 +133,10 @@ class Script(Loggable):
                   width=-200,
                   editor=myEnumEditor(name='names')),
             UItem('edit',
+                  visible_when='editable',
                   enabled_when='name and name!="---" and name is not "None"')))
 
     def _clean_script_name(self, name):
-        # name = self._remove_mass_spectrometer_name(name)
         if self.name_prefix:
             name = self._remove_name_prefix(name)
 
@@ -152,13 +151,7 @@ class Script(Loggable):
     def _remove_name_prefix(self, name):
         if self.name_prefix:
             name = name[len(self.name_prefix):]
-            # name = name.replace('{}_'.format(self.name_prefix), '')
         return name
-
-    # def _remove_mass_spectrometer_name(self, name):
-    #     if self.mass_spectrometer:
-    #         name = name.replace('{}_'.format(self.mass_spectrometer.lower()), '')
-    #     return name
 
     def _get_root(self):
         d = self.label.lower().replace(' ', '_')
@@ -185,15 +178,10 @@ class Script(Loggable):
     @cached_property
     def _get_names(self):
         names = [NULL_STR]
-        # print self.name_prefix, 'asdfasdf'
         ms = self._load_script_names()
         if ms:
-            # msn = '{}_'.format(self.mass_spectrometer.lower())
-            # if self.kind=='Measurement':
-            # print self,self.name_prefix, self.mass_spectrometer, ms
             names.extend([self._clean_script_name(ei) for ei in ms
-                          if self.name_prefix and ei.startswith(self.name_prefix)])
-        # print names
+                          if not self.name_prefix or ei.startswith(self.name_prefix)])
         return names
 
 

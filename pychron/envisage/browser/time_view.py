@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 import os
 import pickle
 from datetime import datetime, timedelta
@@ -181,7 +182,7 @@ class TimeViewModel(HasTraits):
 
     def dump_filter(self):
         p = os.path.join(paths.hidden_dir, 'time_view.p')
-        with open(p, 'w') as wfile:
+        with open(p, 'wb') as wfile:
             obj = {k: getattr(self, k) for k in
                    ('mass_spectrometer', 'analysis_type', 'extract_device',
                     'lowdays', 'highdays', 'limit')}
@@ -190,7 +191,7 @@ class TimeViewModel(HasTraits):
     def load_filter(self):
         p = os.path.join(paths.hidden_dir, 'time_view.p')
         if os.path.isfile(p):
-            with open(p, 'r') as rfile:
+            with open(p, 'rb') as rfile:
                 obj = pickle.load(rfile)
                 self._suppress_load_analyses = True
                 self.trait_set(**obj)
@@ -239,7 +240,7 @@ class TimeViewModel(HasTraits):
         ans = db.get_analyses_by_date_range(mi, ma,
                                             mass_spectrometers=mass_spectrometer,
                                             analysis_types=analysis_type,
-                                            extract_device=extract_device,
+                                            extract_devices=extract_device,
                                             limit=self.limit, order='desc')
         self.oanalyses = self._make_records(ans)
         self.analyses = self.oanalyses[:]

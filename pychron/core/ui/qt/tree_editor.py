@@ -15,6 +15,8 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
+from __future__ import print_function
 import collections
 
 from pyface.qt import QtGui, QtCore
@@ -23,6 +25,7 @@ from pyface.qt.QtGui import QIcon, QTreeWidgetItemIterator, QColor
 from traits.api import Str, Bool, Event
 from traitsui.api import TreeEditor as _TreeEditor
 from traitsui.qt4.tree_editor import SimpleEditor as _SimpleEditor
+from six.moves import range
 
 
 class SimpleEditor(_SimpleEditor):
@@ -39,6 +42,22 @@ class SimpleEditor(_SimpleEditor):
         self.sync_value(self.factory.collapse_all, 'collapse_all', 'from')
         self.sync_value(self.factory.expand_all, 'expand_all', 'from')
         self.sync_value(self.factory.update, 'update', 'from')
+
+    def _label_updated(self, obj, name, label):
+        """  Handles the label of an object being changed.
+        """
+        # Prevent the itemChanged() signal from being emitted.
+        blk = self._tree.blockSignals(True)
+
+        nids = {}
+        for name2, nid in self._map[id(obj)]:
+            if id(nid) not in nids:
+                nids[id(nid)] = None
+                node = self._get_node_data(nid)[1]
+                self._set_label(nid, node.get_label(obj), 0)
+                self._update_icon(nid)
+
+        self._tree.blockSignals(blk)
 
     def _collapse_all_fired(self):
         ctrl = self.control
@@ -132,7 +151,7 @@ class PipelineDelegate(QtGui.QStyledItemDelegate):
     def sizeHint(self, option, index):
         """ returns area taken by the text. """
         # return self._size_map[self._tree.itemFromIndex(index)]
-        return QtCore.QSize(1, 30)
+        return QtCore.QSize(1, 20)
 
     def paint(self, painter, option, index):
         hint = painter.renderHints()
@@ -150,7 +169,8 @@ class PipelineDelegate(QtGui.QStyledItemDelegate):
         item = self._tree.itemFromIndex(index)
         try:
             expanded, node, obj = item._py_data
-        except AttributeError:
+        except AttributeError as e:
+            print('asfasfas', e, item, index)
             return
 
         text = node.get_label(obj)
@@ -206,6 +226,7 @@ class _PipelineEditor(SimpleEditor):
         if self._tree:
             item = PipelineDelegate(self._tree, self.factory.show_icons)
             self._tree.setItemDelegate(item)
+
 
     def _create_item(self, nid, node, obj, index=None):
         """ Create  a new TreeWidgetItem as per word_wrap policy.

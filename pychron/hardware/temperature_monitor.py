@@ -15,11 +15,13 @@
 # ===============================================================================
 
 # =============enthought library imports=======================
+from __future__ import absolute_import
+from __future__ import print_function
 from traits.api import Float, Property, Str
 from traits.trait_errors import TraitError
 from traitsui.api import Item, EnumEditor, VGroup
 
-from core.core_device import CoreDevice
+from .core.core_device import CoreDevice
 from pychron.hardware.core.data_helper import make_bitarray
 
 
@@ -205,6 +207,17 @@ class DPi32TemperatureMonitor(ISeriesDevice):
             self.debug('Input Type={}'.format(self._input_type))
             return True
 
+                # self.debug('read input type2 {}'.format(re.strip()[:3]))
+                # re = re.strip()
+                # if re[:3] == 'R07':
+                #     re = make_bitarray(int(re[3:], 16))
+                #     input_class = INPUT_CLASS_MAP[int(re[:2], 2)]
+                #     if input_class == 'TC':
+                #         self._input_type = TC_MAP[int(re[2:6], 2)]
+                #     self.debug('Input Class={}'.format(input_class))
+                #     self.debug('Input Type={}'.format(self._input_type))
+                #     return True
+
     def reset(self):
         """
         """
@@ -232,8 +245,8 @@ if __name__ == '__main__':
     a.address = '01'
     a.load_communicator('serial', port='usbserial-FTT3I39P', baudrate=9600)
     a.open()
-    print a.communicator.handle
-    print a.read_input_type()
-    print a.read_temperature()
+    print(a.communicator.handle)
+    print(a.read_input_type())
+    print(a.read_temperature())
 
 # ============= EOF ============================================

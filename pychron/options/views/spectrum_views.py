@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from traitsui.api import View, UItem, Item, HGroup, VGroup, Group, EnumEditor
 
 from pychron.envisage.icon_button_editor import icon_button_editor
@@ -166,6 +167,7 @@ class SpectrumMainOptions(MainOptions):
                 checkbox_column(name='y_error', label='Y Err.'),
                 checkbox_column(name='ytick_visible', label='Y Tick'),
                 checkbox_column(name='ytitle_visible', label='Y Title'),
+                checkbox_column(name='y_axis_right', label='Y Right'),
                 # object_column(name='filter_str', label='Filter')
                 ]
 
@@ -190,4 +192,5 @@ VIEWS['appearance'] = SpectrumAppearance
 VIEWS['plateau'] = CalculationSubOptions
 VIEWS['display'] = DisplaySubOptions
 VIEWS['groups'] = GroupSubOptions
+
 # ============= EOF =============================================

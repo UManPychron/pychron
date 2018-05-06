@@ -16,8 +16,10 @@
 
 # ============= enthought library imports =======================
 # ============= standard library imports ========================
-import json
+from __future__ import absolute_import
+from __future__ import print_function
 import os
+from pychron import json
 from pprint import pformat
 
 from pychron.core.helpers.filetools import subdirize, add_extension
@@ -39,16 +41,19 @@ def dvc_dump(obj, path):
     with open(path, 'w') as wfile:
         try:
             json.dump(obj, wfile, indent=4, sort_keys=True)
-        except TypeError, e:
-            print 'dvc dump exception. error:{}, {}'.format(e, pformat(obj))
+        except TypeError as e:
+            print('dvc dump exception. error:{}, {}'.format(e, pformat(obj)))
 
 
 def dvc_load(path):
+    ret = {}
     if os.path.isfile(path):
         with open(path, 'r') as rfile:
-            return json.load(rfile)
-    else:
-        return {}
+            try:
+                ret = json.load(rfile)
+            except ValueError:
+                pass
+    return ret
 
 
 MASSES = None
@@ -76,8 +81,12 @@ def get_spec_sha(p):
     return SPEC_SHAS[p]
 
 
-def analysis_path(runid, repository, modifier=None, extension='.json', mode='r'):
-    root = os.path.join(paths.repository_dataset_dir, repository)
+def analysis_path(runid, repository, modifier=None, extension='.json', mode='r', root=None):
+
+    if root is None:
+        root = paths.repository_dataset_dir
+
+    root = os.path.join(root, repository)
 
     l = 3
     if runid.count('-') > 1:

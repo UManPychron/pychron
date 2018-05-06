@@ -17,31 +17,19 @@
 # =============enthought library imports=======================
 
 # ============= standard library imports ========================
+from __future__ import absolute_import
 import math
 from copy import deepcopy
 
 from numpy import asarray, average, array
-from uncertainties import ufloat, umath, nominal_value
+from uncertainties import ufloat, umath, nominal_value, std_dev
 
 from pychron.core.stats.core import calculate_weighted_mean
 from pychron.processing.arar_constants import ArArConstants
 from pychron.pychron_constants import ALPHAS
-
-
-# def calculate_F_ratio(m4039, m3739, m3639, pr):
-#     """
-#     required ratios
-#     (40/39)m
-#     (36/39)m
-#     (37/39)m
-#
-#
-#     """
-#
-#     atm4036 = 295.5
-#     n = m4039 - atm4036 * m3639 + atm4036 * pr.get('ca3637') * m3739
-#     d = 1 - pr.get('ca3937') * m3739
-#     return n / d - pr.get('k4039')
+import six
+from six.moves import range
+from six.moves import zip
 
 
 def extract_isochron_xy(analyses):
@@ -57,51 +45,67 @@ def extract_isochron_xy(analyses):
     except ZeroDivisionError:
         return
 
-    return xx, yy
+    return xx, yy, a39, a36, a40
 
 
-def calculate_isochron(analyses, error_calc_kind, reg='NewYork'):
+def unpack_value_error(xx):
+    return list(zip(*[(nominal_value(xi), std_dev(xi)) for xi in xx]))
+
+
+def calculate_isochron(analyses, error_calc_kind, exclude=None, reg='NewYork', include_j_err=True):
+    if exclude is None:
+        exclude = []
+
+    # exs, eys = [], []
+    # if exclude:
+    #     ans = [a for i, a in enumerate(analyses) if i in exclude]
+    #     args = extract_isochron_xy(ans)
+    #     if args:
+    #         exx, eyy = args[0], args[1]
+    #         exs, _ = unpack_value_error(exx)
+    #         eys, _ = unpack_value_error(eyy)
+
+    # analyses = [a for i, a in enumerate(analyses) if i not in exclude]
     ref = analyses[0]
-    ans = [(ai.get_interference_corrected_value('Ar39'),
-            ai.get_interference_corrected_value('Ar36'),
-            ai.get_interference_corrected_value('Ar40'))
-           for ai in analyses]
-
-    a39, a36, a40 = array(ans).T
-    try:
-        xx = a39 / a40
-        yy = a36 / a40
-    except ZeroDivisionError:
+    args = extract_isochron_xy(analyses)
+    if args is None:
         return
+    xx, yy, a39, a36, a40 = args
 
-    xs, xerrs = zip(*[(xi.nominal_value, xi.std_dev) for xi in xx])
-    ys, yerrs = zip(*[(yi.nominal_value, yi.std_dev) for yi in yy])
+    xs, xerrs = unpack_value_error(xx)
+    ys, yerrs = unpack_value_error(yy)
 
-    xds, xdes = zip(*[(xi.nominal_value, xi.std_dev) for xi in a40])
-    yns, ynes = zip(*[(xi.nominal_value, xi.std_dev) for xi in a36])
-    xns, xnes = zip(*[(xi.nominal_value, xi.std_dev) for xi in a39])
+    xds, xdes = unpack_value_error(a40)
+    yns, ynes = unpack_value_error(a36)
+    xns, xnes = unpack_value_error(a39)
 
     regx = isochron_regressor(ys, yerrs, xs, xerrs,
                               xds, xdes, yns, ynes, xns, xnes)
+    regx.user_excluded = exclude
 
     reg = isochron_regressor(xs, xerrs, ys, yerrs,
                              xds, xdes, xns, xnes, yns, ynes,
                              reg)
+    reg.user_excluded = exclude
 
     regx.error_calc_type = error_calc_kind
     reg.error_calc_type = error_calc_kind
 
-    xint = ufloat(regx.get_intercept(), regx.get_intercept_error())
-    # xint = ufloat(reg.x_intercept, reg.x_intercept_error)
+    yint = ufloat(reg.get_intercept(), reg.get_intercept_error())
     try:
-        r = xint ** -1
+        r = 1 / ufloat(regx.get_intercept(), regx.get_intercept_error())
     except ZeroDivisionError:
         r = 0
 
     age = ufloat(0, 0)
     if r > 0:
-        age = age_equation((ref.j.nominal_value, 0), r, arar_constants=ref.arar_constants)
-    return age, reg, (xs, ys, xerrs, yerrs)
+        if include_j_err:
+            j = ref.j
+        else:
+            j = (nominal_value(ref.j), 0)
+        age = age_equation(j, r, arar_constants=ref.arar_constants)
+
+    return age, yint, reg #, #(xs, ys, xerrs, yerrs, exclude)
 
 
 def isochron_regressor(xs, xes, ys, yes,
@@ -164,7 +168,6 @@ def calculate_plateau_age(ages, errors, k39, kind='inverse_variance', method='fl
                     errors=errors,
                     signals=k39,
                     excludes=excludes,
-                    overlap_nsigma=options.get('step_sigma', 2),
                     nsteps=options.get('nsteps', 3),
                     gas_fraction=options.get('gas_fraction', 50))
 
@@ -280,7 +283,7 @@ def interference_corrections(a40, a39, a38, a37, a36,
         arar_constants = ArArConstants()
 
     pr = production_ratios
-    k37 = ufloat(0, 1e-20)
+    k37 = ufloat(0, 0, tag='k37')
 
     if arar_constants.k3739_mode.lower() == 'normal' and not fixed_k3739:
         # iteratively calculate 37, 39
@@ -330,7 +333,8 @@ def calculate_atmospheric(a38, a36, k38, ca38, ca36, decay_time,
     # atm3836 = arar_constants.atm3836.nominal_value
 
     # m = pr.get('Cl3638', 0) * lcl36 * decay_time
-    atm36 = ufloat(0, 1e-20)
+    # atm36 = ufloat(0, 0, tag='atm36')
+    atm36 = 0
     for _ in range(5):
         ar38atm = atm3836 * atm36
         cl38 = a38 - ar38atm - k38 - ca38
@@ -351,6 +355,40 @@ def calculate_F(isotopes,
     """
     a40, a39, a38, a37, a36 = isotopes
 
+    def calc_f(pr):
+        k37, k38, k39, ca36, ca37, ca38, ca39 = interference_corrections(a40, a39, a38, a37, a36,
+                                                                         pr, arar_constants, fixed_k3739)
+        atm36, cl36, cl38 = calculate_atmospheric(a38, a36, k38, ca38, ca36,
+                                                  decay_time,
+                                                  pr,
+                                                  arar_constants)
+
+        # calculate radiogenic
+        # dont include error in 40/36
+        atm40 = atm36 * nominal_value(arar_constants.atm4036)
+
+        k4039 = pr.get('K4039', 0)
+        k40 = k39 * k4039
+
+        rad40 = a40 - atm40 - k40
+        try:
+            ff = rad40 / k39
+        except ZeroDivisionError:
+            ff = ufloat(1.0, 0)
+
+        nar = {'k40': k40, 'ca39': ca39, 'k38': k38, 'ca38': ca38, 'cl38': cl38, 'k37': k37, 'ca37': ca37, 'ca36': ca36,
+               'cl36': cl36}
+        try:
+            rp = rad40 / a40 * 100
+        except ZeroDivisionError:
+            rp = ufloat(0, 0)
+
+        comp = {'rad40': rad40, 'rad40_percent': rp, 'ca37': ca37, 'ca39': ca39, 'ca36': ca36, 'k39': k39,
+                'atm40': atm40}
+
+        ifc = {'Ar40': a40 - k40, 'Ar39': k39, 'Ar38': a38, 'Ar37': a37, 'Ar36': atm36}
+        return ff, nar, comp, ifc
+
     if interferences is None:
         interferences = {}
 
@@ -358,59 +396,12 @@ def calculate_F(isotopes,
         arar_constants = ArArConstants()
 
     # make local copy of interferences
-    pr = {k: v.__copy__() for k, v in interferences.iteritems()}
+    pr = {k: ufloat(nominal_value(v), std_dev=0, tag=v.tag) for k, v in interferences.items()}
 
-    k37, k38, k39, ca36, ca37, ca38, ca39 = interference_corrections(a40, a39, a38, a37, a36,
-                                                                     pr, arar_constants, fixed_k3739)
-    atm36, cl36, cl38 = calculate_atmospheric(a38, a36, k38, ca38, ca36,
-                                              decay_time,
-                                              pr,
-                                              arar_constants)
+    f_wo_irrad, _, _, _ = calc_f(pr)
+    f, non_ar_isotopes, computed, interference_corrected = calc_f(interferences)
 
-    # calculate radiogenic
-    # dont include error in 40/36
-    atm40 = atm36 * nominal_value(arar_constants.atm4036)
-
-    k4039 = pr.get('K4039', 0)
-    k40 = k39 * k4039
-
-    rad40 = a40 - atm40 - k40
-    try:
-        f = rad40 / k39
-    except ZeroDivisionError:
-        f = ufloat(1.0, 0)
-
-    rf = deepcopy(f)
-
-    non_ar_isotopes = dict(k40=k40,
-                           ca39=ca39,
-                           k38=k38,
-                           ca38=ca38,
-                           cl38=cl38,
-                           k37=k37,
-                           ca37=ca37,
-                           ca36=ca36,
-                           cl36=cl36)
-
-    try:
-        rp = rad40 / a40 * 100
-    except ZeroDivisionError:
-        rp = ufloat(0, 0)
-
-    computed = dict(rad40=rad40, rad40_percent=rp,
-                    k39=k39, atm40=atm40)
-
-    interference_corrected = dict(Ar40=a40 - k40,
-                                  Ar39=k39,
-                                  Ar38=a38,
-                                  Ar37=a37,
-                                  Ar36=atm36)
-    # clear errors in irrad
-    for pp in pr.itervalues():
-        pp.std_dev = 0
-    f_wo_irrad = f
-
-    return rf, f_wo_irrad, non_ar_isotopes, computed, interference_corrected
+    return f, f_wo_irrad, non_ar_isotopes, computed, interference_corrected
 
 
 def age_equation(j, f,

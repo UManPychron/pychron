@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 import os
 
 from pyface.message_dialog import warning, information
@@ -106,13 +107,6 @@ class NewPatternAction(BasePatternAction):
     method = 'new_pattern'
 
 
-class SendTestNotificationAction(TaskAction):
-    name = 'Send Test Notification'
-    dname = 'Send Test Notification'
-    method = 'send_test_notification'
-    # accelerator = 'Ctrl+Shift+N'
-
-
 class DeselectAction(TaskAction):
     name = 'Deselect'
     dname = 'Deselect'
@@ -147,7 +141,7 @@ class QueueConditionalsAction(Action):
             if spec:
                 dnames = spec.spectrometer.detector_names
 
-            edit_conditionals(None, detectors=dnames, app=task.application)
+            edit_conditionals(None, detectors=dnames)
 
 
 class SystemConditionalsAction(Action):
@@ -166,7 +160,7 @@ class SystemConditionalsAction(Action):
 
         p = get_path(paths.spectrometer_dir, '.*conditionals', ('.yaml', '.yml'))
         if p:
-            edit_conditionals(p, detectors=dnames, app=task.application)
+            edit_conditionals(p, detectors=dnames)
         else:
             warning(None, 'No system conditionals file at {}'.format(p))
 

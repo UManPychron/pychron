@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 import os
 from itertools import groupby
 
@@ -154,19 +155,19 @@ class BaseStageMap(Loggable):
     def mid_holes(self):
         for i, (g, ri) in enumerate(self._grouped_rows()):
             ri = list(ri)
-            yield ri[len(ri) / 2]
+            yield ri[len(ri) // 2]
 
     def get_calibration_hole(self, h):
         d = 'north', 'east', 'south', 'west', 'center'
         try:
             idx = d.index(h)
-        except IndexError, e:
+        except IndexError as e:
             self.debug('^^^^^^^^^^^^^^^^^^^ index error: {}, {}, {}'.format(d, h, e))
             return
 
         try:
             key = self.calibration_holes[idx]
-        except IndexError, e:
+        except IndexError as e:
             self.debug('^^^^^^^^^^^^^^^^^^^ index error: {}, {}'.format(idx, e))
             self.debug('calibration holes={}'.format(self.calibration_holes))
             return

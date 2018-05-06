@@ -16,15 +16,18 @@
 
 # ============= enthought library imports =======================
 from itertools import groupby
+from operator import attrgetter
 
-from traits.api import Any, Bool, Instance
+from apptools.preferences.preference_binding import bind_preference
+from traits.api import Any, Bool, Instance, List
 from traitsui.api import View
 
+from pychron.core.progress import progress_loader, progress_iterator
 from pychron.options.options_manager import IdeogramOptionsManager, OptionsController, SeriesOptionsManager, \
     SpectrumOptionsManager, InverseIsochronOptionsManager, VerticalFluxOptionsManager, XYScatterOptionsManager, \
-    RadialOptionsManager
+    RadialOptionsManager, RegressionSeriesOptionsManager
 from pychron.options.views.views import view
-from pychron.pipeline.nodes.base import BaseNode
+from pychron.pipeline.nodes.base import BaseNode, SortableNode
 from pychron.pipeline.plot.plotter.series import RADIOGENIC_YIELD, PEAK_CENTER, \
     ANALYSIS_TYPE, AGE, AR4036, UAR4036, AR4038, UAR4038, AR4039, UAR4039, LAB_TEMP, LAB_HUM, AR3739, AR3738, UAR4037, \
     AR4037, AR3639, UAR3839, AR3839, UAR3639, UAR3739, UAR3738, UAR3638, AR3638, UAR3637, AR3637
@@ -35,7 +38,7 @@ class NoAnalysesError(BaseException):
     pass
 
 
-class FigureNode(BaseNode):
+class FigureNode(SortableNode):
     editor = Any
     editor_klass = Any
     options_view = Instance(View)
@@ -66,8 +69,8 @@ class FigureNode(BaseNode):
         if not state.unknowns and self.no_analyses_warning:
             raise NoAnalysesError
 
-        self.unknowns = state.unknowns
-        self.references = state.references
+        # self.unknowns = state.unknowns
+        # self.references = state.references
 
         # oname = ''
         if use_plotting and self.use_plotting:
@@ -82,45 +85,21 @@ class FigureNode(BaseNode):
                 self.editor = editor
 
             if self.auto_set_items:
-                editor.set_items(state.unknowns)
-                # self.editors.append(editor)
-                    # oname = editor.name
+                unks = state.unknowns
+                bind_preference(self, 'skip_meaning', 'pychron.pipeline.skip_meaning')
+                if self.name in self.skip_meaning.split(','):
+                    unks = [u for u in unks if u.tag.lower() != 'skip']
 
-            key = lambda x: x.name
+                editor.set_items(unks)
+                if hasattr(editor, 'component'):
+                    editor.component.invalidate_and_redraw()
+
+            key = attrgetter('name')
             for name, es in groupby(sorted(state.editors, key=key), key=key):
                 for i, ei in enumerate(es):
                     ei.name = '{} {:02n}'.format(ei.name, i + 1)
-                    # else:
-                    #     a = list(set([ni.labnumber for ni in state.unknowns]))
-                    #     oname = '{} {}'.format(grouped_name(a), self.name)
-                    #
-                    #     new_name = oname
-                    #     cnt = 1
-                    #     for e in state.editors:
-                    #         print 'a={}, b={}'.format(e.name, new_name)
-                    #         if e.name == new_name:
-                    #             new_name = '{} {:02n}'.format(oname, cnt)
-                    #             cnt += 1
-                    #     self.
-
-                    # if self.editors:
-                    #     self.editor = self.editors[0]
-
-                    # cnt = 1
-                    # for e in state.editors:
-                    #     print 'a={}, b={}'.format(e.name, new_name)
-                    #     if e.name == new_name:
-                    #         new_name = '{} {:02n}'.format(oname, cnt)
-                    #         cnt += 1
-
-        # self.name = new_name
-                    # if self.editor:
-                    #     self.editor.name = new_name
-
-                    # return self.editors
 
     def configure(self, refresh=True, pre_run=False, **kw):
-        # self._configured = True
         if not pre_run:
             self._manual_configured = True
 
@@ -143,7 +122,7 @@ class FigureNode(BaseNode):
 
     def _editor_factory(self):
         klass = self.editor_klass
-        if isinstance(klass, (str, unicode)):
+        if isinstance(klass, (str, bytes, bytearray)):
             pkg, klass = klass.split(',')
             mod = __import__(pkg, fromlist=[klass])
             klass = getattr(mod, klass)
@@ -155,9 +134,6 @@ class FigureNode(BaseNode):
 
     def _plotter_options_manager_default(self):
         return self.plotter_options_manager_klass()
-
-    def _configure_hook(self):
-        pass
 
     def _options_view_default(self):
         return view('{} Options'.format(self.name))
@@ -173,23 +149,9 @@ class XYScatterNode(FigureNode):
         if self.unknowns:
             unk = self.unknowns[0]
             # names = []
-            iso_keys = unk.isotope_keys
-            names = iso_keys
-            # if iso_keys:
-            #     names.extend(iso_keys)
-            #     names.extend(['{}bs'.format(ki) for ki in iso_keys])
-            #     names.extend(['{}ic'.format(ki) for ki in iso_keys])
-            #     if 'Ar40' in iso_keys:
-            #         if 'Ar39' in iso_keys:
-            #             names.append('Ar40/Ar39')
-            #             names.append('uAr40/Ar39')
-            #         if 'Ar36' in iso_keys:
-            #             names.append('Ar40/Ar36')
-            #             names.append('uAr40/Ar36')
-            #
-            # names.append('Peak Center')
-            # names.append('AnalysisType')
-            pom.set_names(names)
+            # iso_keys = unk.isotope_keys
+            # names = iso_keys
+            pom.set_names(unk.isotope_keys)
 
 
 class VerticalFluxNode(FigureNode):
@@ -231,32 +193,14 @@ class SeriesNode(FigureNode):
                 names.extend(iso_keys)
                 names.extend(['{}bs'.format(ki) for ki in iso_keys])
                 names.extend(['{}ic'.format(ki) for ki in iso_keys])
-                if AR39 in iso_keys:
-                    if AR40 in iso_keys:
-                        names.extend([AR4039, UAR4039])
-                    if AR38 in iso_keys:
-                        names.extend([AR3839, UAR3839])
-                    if AR37 in iso_keys:
-                        names.extend([AR3739, UAR3739])
-                    if AR36 in iso_keys:
-                        names.extend([AR3639, UAR3639])
 
-                if AR38 in iso_keys:
-                    if AR40 in iso_keys:
-                        names.extend([AR4038, UAR4038])
-                    if AR37 in iso_keys:
-                        names.extend([AR3738, UAR3738])
-                    if AR36 in iso_keys:
-                        names.extend([AR3638, UAR3638])
+                for iso in iso_keys:
+                    for jiso in iso_keys:
+                        if iso == jiso:
+                            continue
 
-                if AR37 in iso_keys:
-                    if AR40 in iso_keys:
-                        names.extend([AR4037, UAR4037])
-                    if AR36 in iso_keys:
-                        names.extend([AR3637, UAR3637])
-
-                if AR36 in iso_keys:
-                    names.extend([AR4036, UAR4036])
+                        if '{}/{}'.format(jiso, iso) not in names:
+                            names.append('{}/{}'.format(iso, jiso))
 
                 if unk.analysis_type in (UNKNOWN, COCKTAIL):
                     names.append(AGE)
@@ -272,6 +216,37 @@ class SeriesNode(FigureNode):
                             names.append('{}/{} DetIC'.format(vj.detector, vi.detector))
 
             names.extend([PEAK_CENTER, ANALYSIS_TYPE, LAB_TEMP, LAB_HUM])
+
+            pom.set_names(names)
+
+
+class RegressionSeriesNode(SeriesNode):
+    name = 'Regression Series'
+    editor_klass = 'pychron.pipeline.plot.editors.regression_series_editor,RegressionSeriesEditor'
+    plotter_options_manager_klass = RegressionSeriesOptionsManager
+
+    def run(self, state):
+        po = self.plotter_options
+
+        keys = [fi.name for fi in list(reversed([pi for pi in po.get_loadable_aux_plots()]))]
+
+        def load_raw(x, prog, i, n):
+            x.load_raw_data(keys)
+
+        progress_iterator(state.unknowns, load_raw, threshold=1)
+        super(RegressionSeriesNode, self).run(state)
+
+    def _configure_hook(self):
+        pom = self.plotter_options_manager
+        if self.unknowns:
+            unk = self.unknowns[0]
+            names = []
+            iso_keys = unk.isotope_keys
+            if iso_keys:
+                names.extend(iso_keys)
+                names.extend(['{}bs'.format(ki) for ki in iso_keys])
+                names.extend(['{}ic'.format(ki) for ki in iso_keys])
+
             pom.set_names(names)
 
 
@@ -285,4 +260,5 @@ class RadialNode(FigureNode):
     name = 'Radial Plot'
     editor_klass = 'pychron.pipeline.plot.editors.radial_editor,RadialEditor'
     plotter_options_manager_klass = RadialOptionsManager
+
 # ============= EOF =============================================

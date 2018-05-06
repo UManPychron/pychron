@@ -15,20 +15,26 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 import math
 
 from numpy import array, nan
 from traits.api import HasTraits, List, Property, cached_property, Str, Bool, Int, Event, Float
+from traits.trait_base import TraitsCache, Undefined
 from uncertainties import ufloat, nominal_value, std_dev
 
 from pychron.core.stats.core import calculate_mswd, calculate_weighted_mean, validate_mswd
 from pychron.experiment.utilities.identifier import make_aliquot
+from pychron.processing.analyses.analysis import IdeogramPlotable
+from pychron.processing.arar_age import ArArAge
 from pychron.processing.argon_calculations import calculate_plateau_age, age_equation, calculate_isochron
 from pychron.pychron_constants import ALPHAS, AGE_MA_SCALARS, MSEM, SD
+from six.moves import range
+from six.moves import zip
 
 
 def AGProperty(*depends):
-    d = 'dirty,analyses:[status,temp_status]'
+    d = 'dirty,analyses:[temp_status]'
     # d = 'dirty'  # ,analyses:[status,temp_status]'
     if depends:
         d = '{},{}'.format(','.join(depends), d)
@@ -36,7 +42,7 @@ def AGProperty(*depends):
     return Property(depends_on=d)
 
 
-class AnalysisGroup(HasTraits):
+class AnalysisGroup(IdeogramPlotable):
     attribute = Str('uage')
     analyses = List
     nanalyses = AGProperty()
@@ -65,6 +71,7 @@ class AnalysisGroup(HasTraits):
     irradiation = Property
     irradiation_label = Property
     sample = Property
+    project = Property
     aliquot = Property
     material = Property
     unit = Str
@@ -75,6 +82,7 @@ class AnalysisGroup(HasTraits):
     age_units = Property
 
     j_err = AGProperty()
+    j = AGProperty()
     include_j_error_in_mean = Bool(True)
     include_j_error_in_individual_analyses = Bool(False)
 
@@ -82,6 +90,15 @@ class AnalysisGroup(HasTraits):
     dirty = Event
 
     total_n = AGProperty()
+
+    arar_constants = AGProperty()
+
+    isochron_4036 = None
+    isochron_regressor = None
+    _age_units = None
+
+    def __init__(self, *args, **kw):
+        super(AnalysisGroup, self).__init__(make_arar_constants=False, *args, **kw)
 
     def attr_stats(self, attr):
         w, sd, sem, (vs, es) = self._calculate_weighted_mean(attr, error_kind='both')
@@ -104,8 +121,18 @@ class AnalysisGroup(HasTraits):
         valid_mswd = validate_mswd(mswd, self.nanalyses)
         return mswd, valid_mswd, self.nanalyses
 
+    def set_temporary_age_units(self, a):
+        self._age_units = a
+        self.dirty = True
+
     def _get_age_units(self):
+        if self._age_units:
+            return self._age_units
+
         return self.analyses[0].arar_constants.age_units
+
+    def _get_arar_constants(self):
+        return self.analyses[0].arar_constants
 
     def _get_age_scalar(self):
         au = self.age_units
@@ -134,16 +161,21 @@ class AnalysisGroup(HasTraits):
 
     @cached_property
     def _get_j_err(self):
-        j = self.analyses[0].j
+        j = self.j
         try:
-            e = (j.std_dev / j.nominal_value) if j is not None else 0
+            e = (std_dev(j) / nominal_value(j)) if j is not None else 0
         except ZeroDivisionError:
             e = nan
         return e
 
     @cached_property
+    def _get_j(self):
+        j = self.analyses[0].j
+        return j
+
+    @cached_property
     def _get_isochron_age(self):
-        return self._calculate_isochron_age()
+        return self.calculate_isochron_age()
 
     @cached_property
     def _get_aliquot(self):
@@ -186,10 +218,14 @@ class AnalysisGroup(HasTraits):
         self._sample = s
 
     @cached_property
+    def _get_project(self):
+        return self.analyses[0].project
+
+    @cached_property
     def _get_percent_39Ar(self):
         return 0
 
-    # @cached_property
+    @cached_property
     def _get_weighted_age(self):
         attr = self.attribute
         if attr.startswith('uage'):
@@ -199,10 +235,11 @@ class AnalysisGroup(HasTraits):
         #     else:
         #         v, e = self._calculate_weighted_mean('uage_wo_j_err', self.weighted_age_error_kind)
         # else:
+
         v, e = self._calculate_weighted_mean(attr, self.weighted_age_error_kind)
         e = self._modify_error(v, e, self.weighted_age_error_kind)
         try:
-            return ufloat(v, max(0, e))
+            return ufloat(v, max(0, e))  # / self.age_scalar
         except AttributeError:
             return ufloat(0, 0)
 
@@ -214,33 +251,37 @@ class AnalysisGroup(HasTraits):
         if kind == MSEM:
             e *= mswd ** 0.5 if mswd > 1 else 1
 
-        if 'age' in self.attribute:
-            if include_j_error is None:
-                include_j_error = self.include_j_error_in_mean
-
-            if include_j_error:
-                try:
-                    e = ((e / v) ** 2 + self.j_err ** 2) ** 0.5 * v
-                except ZeroDivisionError:
-                    return nan
+        # print('iiiii', kind, mswd, e, v, e/v, self.j_err)
+        # if 'age' in self.attribute:
+        #     if include_j_error is None:
+        #         include_j_error = self.include_j_error_in_mean
+        #
+        #     if include_j_error:
+        #         try:
+        #             # e = ((e / v) ** 2 + self.j_err ** 2) ** 0.5 * v
+        #             # e = ((e / v) ** 2 + self.j_err ** 2) ** 0.5 * v
+        #
+        #         except ZeroDivisionError:
+        #             return nan
+        # print('aoutasd', e)
         return e
 
-    # @cached_property
+    @cached_property
     def _get_weighted_kca(self):
         return ufloat(*self._calculate_weighted_mean('kca'))
 
-    # @cached_property
+    @cached_property
     def _get_arith_kca(self):
         return ufloat(*self._calculate_arithmetic_mean('kca'))
 
-    # @cached_property
+    @cached_property
     def _get_arith_age(self):
         if self.include_j_error_in_individual_analyses:
             v, e = self._calculate_arithmetic_mean('uage')
         else:
             v, e = self._calculate_arithmetic_mean('uage_wo_j_err')
         e = self._modify_error(v, e, self.arith_age_error_kind)
-        return ufloat(v, e)
+        return ufloat(v, e)  # / self.age_scalar
 
     @cached_property
     def _get_total_n(self):
@@ -257,11 +298,12 @@ class AnalysisGroup(HasTraits):
         vs = (ai.get_value(attr) for ai in self.clean_analyses())
         vs = [vi for vi in vs if vi is not None]
         if vs:
-            vs, es = zip(*[(nominal_value(v), std_dev(v)) for v in vs])
+            vs, es = list(zip(*[(nominal_value(v), std_dev(v)) for v in vs]))
             vs, es = array(vs), array(es)
             return vs, es
 
     def _calculate_mean(self, attr, use_weights=True, error_kind=None):
+
         args = self._get_values(attr)
         sem = 0
         if args:
@@ -296,16 +338,22 @@ class AnalysisGroup(HasTraits):
         return self._calculate_mean(attr, use_weights=True, error_kind=error_kind)
 
     def get_isochron_data(self):
-        return calculate_isochron(list(self.clean_analyses()), self.isochron_age_error_kind)
+        ans = [a for a in self.analyses if isinstance(a, ArArAge)]
+        exclude = [i for i, x in enumerate(ans) if x.is_omitted()]
+        if ans:
+            return calculate_isochron(ans, self.isochron_age_error_kind, exclude=exclude)
 
-    def _calculate_isochron_age(self):
-        args = calculate_isochron(list(self.clean_analyses()), self.isochron_age_error_kind)
+    def calculate_isochron_age(self):
+        # args = calculate_isochron(list(self.clean_analyses()), self.isochron_age_error_kind,
+        #                           include_j_err=self.include_j_error_in_mean)
+        args = self.get_isochron_data()
         if args:
             age = args[0]
-            reg = args[1]
-            v, e = age.nominal_value, age.std_dev
-            e = self._modify_error(v, e, self.isochron_age_error_kind,
-                                   mswd=reg.mswd)
+            self.isochron_4036 = args[1]
+            reg = args[2]
+            self.isochron_regressor = reg
+            v, e = nominal_value(age), std_dev(age)
+            e = self._modify_error(v, e, self.isochron_age_error_kind, mswd=reg.mswd)
 
             return ufloat(v, e)
 
@@ -343,16 +391,20 @@ class StepHeatAnalysisGroup(AnalysisGroup):
 
     @cached_property
     def _get_integrated_age(self):
-        rad40, k39 = zip(*[(a.get_computed_value('rad40'),
-                            a.get_computed_value('k39')) for a in self.clean_analyses()])
-        rad40 = sum(rad40)
-        k39 = sum(k39)
+        ret = nan
+        ans = list(self.clean_analyses())
+        if ans:
+            rad40 = sum([a.get_computed_value('rad40') for a in ans])
+            k39 = sum([a.get_computed_value('k39') for a in ans])
 
-        j = a.j
-        try:
-            return age_equation(rad40 / k39, j, a.arar_constants)
-        except ZeroDivisionError:
-            return nan
+            a = ans[0]
+            j = a.j
+            try:
+                ret = age_equation(rad40 / k39, j, a.arar_constants)  # / self.age_scalar
+            except ZeroDivisionError:
+                pass
+
+        return ret
 
     # def _get_steps(self):
     #     d = [(ai.age,
@@ -374,7 +426,7 @@ class StepHeatAnalysisGroup(AnalysisGroup):
         if not (l is None and h is None):
             return l, h
 
-    # @cached_property
+    @cached_property
     def _get_plateau_age(self):
         # ages, errors, k39 = self._get_steps()
 
@@ -386,8 +438,10 @@ class StepHeatAnalysisGroup(AnalysisGroup):
                    'gas_fraction': self.plateau_gas_fraction,
                    'fixed_steps': self.fixed_steps}
 
-        excludes = [i for i in enumerate(self.analyses) if ai.is_omitted()]
+        excludes = [i for i, ai in enumerate(self.analyses) if ai.is_omitted()]
         args = calculate_plateau_age(ages, errors, k39, options=options, excludes=excludes)
+
+        v, e = 0, 0
         if args:
             v, e, pidx = args
             if pidx[0] == pidx[1]:
@@ -397,7 +451,7 @@ class StepHeatAnalysisGroup(AnalysisGroup):
             self.plateau_steps_str = '{}-{}'.format(ALPHAS[pidx[0]],
                                                     ALPHAS[pidx[1]])
 
-            step_idxs = [i for i in xrange(pidx[0], pidx[1] + 1) if not self.analyses[i].is_omitted()]
+            step_idxs = [i for i in range(pidx[0], pidx[1] + 1) if not self.analyses[i].is_omitted()]
             self.nsteps = len(step_idxs)
 
             pages = [ages[i] for i in step_idxs]
@@ -414,7 +468,7 @@ class StepHeatAnalysisGroup(AnalysisGroup):
             if math.isnan(e):
                 e = 0
 
-            return ufloat(v, max(0, e))
+        return ufloat(v, max(0, e))  # / self.age_scalar
 
 
 class InterpretedAgeGroup(StepHeatAnalysisGroup):
@@ -437,6 +491,53 @@ class InterpretedAgeGroup(StepHeatAnalysisGroup):
 
     name = Str
     use = Bool
+
+    macrochron_enabled = Bool(True)
+
+    lith_class = Str
+    lith_classes = List
+
+    lith_group = Str
+    lith_groups = List
+
+    lith_type = Str
+    lith_types = List
+
+    lith = Str
+    liths = List
+
+    reference = Str
+    lat_long = Str
+
+    comments = Str
+
+    @property
+    def age(self):
+        return self.preferred_age
+
+    @property
+    def uage(self):
+        return self.preferred_age
+
+    @property
+    def kca(self):
+        return self.preferred_kca
+
+    def _value_string(self, t):
+        try:
+            v = getattr(self, t)
+            a,e = nominal_value(v), std_dev(v)
+        except AttributeError:
+            a,e = '---', '---'
+
+        return a, e
+
+    def get_value(self, attr):
+        if hasattr(self, attr):
+            ret = getattr(self, attr)
+        else:
+            ret = ufloat(0, 0)
+        return ret
 
     def _name_default(self):
         name = ''
@@ -470,7 +571,7 @@ class InterpretedAgeGroup(StepHeatAnalysisGroup):
 
     def get_ma_scaled_age(self):
         a = self.preferred_age
-        return a * self.age_scalar
+        return a / self.age_scalar
 
     def _get_preferred_mswd(self):
         if self.preferred_age_kind == 'Plateau':

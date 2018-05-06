@@ -17,13 +17,15 @@
 
 
 # =============enthought library imports=======================
+from __future__ import absolute_import
 from chaco.scatterplot import ScatterPlot
 from traits.api import Bool, on_trait_change, Event
 
 # =============standard library imports ========================
 
 # =============local library imports  ==========================
-from graph import Graph
+from .graph import Graph
+import six
 
 
 class StackedGraph(Graph):
@@ -101,8 +103,8 @@ class StackedGraph(Graph):
                 kw['bounds'] = (1, self.panel_height)
 
         p = super(StackedGraph, self).new_plot(**kw)
-        p.value_axis.ensure_labels_bounded = True
-        p.value_axis.title_spacing = 50
+        # p.value_axis.ensure_labels_bounded = True
+        # p.value_axis.title_spacing = 50
 
         if n >= 1:
             pm = self.plotcontainer.components[0]
@@ -121,53 +123,16 @@ class StackedGraph(Graph):
         comps = pc.components
         if not bottom:
             comps = reversed(comps)
+        if n > 1:
+            for i, pi in enumerate(comps):
+                if i < n - 1:
+                    pi.padding_top = 0
 
-        pt = 20 if self._has_title else 10
-        # print 'ffff', self.padding_bottom
-        for i, pi in enumerate(comps):
-            if n == 1:
-                # pi.padding_bottom = self.padding_bottom
-
-                pi.padding_top = pt
-                pi.index_axis.visible = True
-
-            else:
-                pi.padding_top = 0
                 if i == 0:
-                    # pi.padding_bottom = self.padding_bottom
                     pi.index_axis.visible = True
                 else:
                     pi.index_axis.visible = False
                     pi.padding_bottom = 0
-                    if i == n - 1:
-                        pi.padding_top = pt
-
-                        #        else:
-                        #            for i, pi in enumerate(pc.components):
-                        #                if n == 1:
-                        #                    pi.padding_bottom = 50
-                        #                    pi.padding_top = 10
-                        #                    pi.index_axis.visible = True
-                        #                else:
-                        #                    pi.padding_top = 0
-                        #                    if i == 0:
-                        #                        pi.padding_bottom = 50
-                        #                        pi.index_axis.visible = True
-                        #                    else:
-                        #                        pi.padding_bottom = 0
-                        #                        pi.index_axis.visible = False
-                        #                        if i == n - 1:
-                        #                            pi.padding_top = 10
-                        #        a = n - 1 if bottom else 0
-                        #        for i, pi in enumerate(pc.components):
-                        #            if i == a:
-                        #                pi.padding_bottom = 50
-                        #                pi.padding_top = 10
-                        #                pi.index_axis.visible = True
-                        #            else:
-                        #                pi.index_axis.visible = False
-                        #                pi.padding_top = 0
-                        #                pi.padding_bottom = 0
 
     def new_series(self, *args, **kw):
         s, _p = super(StackedGraph, self).new_series(*args, **kw)
@@ -194,10 +159,7 @@ class StackedGraph(Graph):
         padding_top = sum([getattr(p, 'padding_top') for p in comps])
         padding_bottom = sum([getattr(p, 'padding_bottom') for p in comps])
         #
-        pt = self.plotcontainer.padding_top + \
-             self.plotcontainer.padding_bottom + \
-             padding_top + padding_bottom
-        #        pt = 60
+        pt = self.plotcontainer.padding_top + self.plotcontainer.padding_bottom + padding_top + padding_bottom
         n = len(self.plotcontainer.components)
         if self.equi_stack:
             for p in self.plotcontainer.components:
@@ -217,7 +179,7 @@ class StackedGraph(Graph):
 
         obj.suppress_update = True
         for plot in self.plots:
-            for k, ps in plot.plots.iteritems():
+            for k, ps in six.iteritems(plot.plots):
                 si = ps[0]
 
                 if si.index is not obj:

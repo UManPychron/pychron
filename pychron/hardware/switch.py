@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from traits.api import Str, Any, Bool, Property, Float, List
 # ============= standard library imports ========================
 import time
@@ -28,6 +29,7 @@ class BaseSwitch(Loggable):
     prefix_name = 'BASE_SWITCH'
     state = Bool(False)
     software_lock = Bool(False)
+    ignore_lock_warning = Bool(False)
     enabled = Bool(True)
     owner = Str
 
@@ -66,7 +68,7 @@ class ManualSwitch(BaseSwitch):
     prefix_name = 'MANUAL_SWITCH'
 
     def state_str(self):
-        return '{}{}{}'.format(self.name, self.state)
+        return '{}{}'.format(self.name, self.state)
 
     def set_open(self, *args, **kw):
         self.state = True

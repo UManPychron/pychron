@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from pyface.tasks.action.schema import SToolBar
 from pyface.tasks.task_layout import TaskLayout, PaneItem, Splitter, Tabbed
 from traits.api import on_trait_change, Button, Float, Str, Int, Bool, Event, HasTraits
@@ -23,7 +24,7 @@ from traitsui.api import View, Item, VGroup, UItem, HGroup
 from pychron.entry.graphic_generator import GraphicModel, GraphicGeneratorController
 from pychron.entry.labnumber_entry import LabnumberEntry
 from pychron.entry.tasks.actions import SavePDFAction, DatabaseSaveAction, PreviewGenerateIdentifiersAction, \
-    GenerateIdentifiersAction, ClearSelectionAction, RecoverAction
+    GenerateIdentifiersAction, ClearSelectionAction, RecoverAction, SyncMetaDataAction
 from pychron.entry.tasks.labnumber.panes import LabnumbersPane, \
     IrradiationPane, IrradiationEditorPane, IrradiationCanvasPane, LevelInfoPane, ChronologyPane
 from pychron.envisage.browser.base_browser_model import BaseBrowserModel
@@ -35,6 +36,7 @@ from pychron.pychron_constants import DVC_PROTOCOL
 ATTRS = (('sample', ''),
          ('material', ''),
          ('project', ''),
+         ('principal_investigator', ''),
          ('weight', 0),
          ('j', 0,),
          ('j_err', 0))
@@ -45,6 +47,7 @@ class ClearSelectionView(HasTraits):
     material = Bool(True)
     weight = Bool(True)
     project = Bool(True)
+    principal_investigator = Bool(True)
     j = Bool(True)
     j_err = Bool(True)
 
@@ -68,11 +71,12 @@ class ClearSelectionView(HasTraits):
         v = View(VGroup(HGroup(UItem('select_all'),
                                UItem('clear_all')),
                         VGroup(Item('sample'),
-                        Item('material'),
-                        Item('project'),
-                        Item('weight'),
-                        Item('j', label='J'),
-                        Item('j_err', label='J Err.'))),
+                               Item('material'),
+                               Item('project'),
+                               Item('principal_investigator'),
+                               Item('weight'),
+                               Item('j', label='J'),
+                               Item('j_err', label='J Err.'))),
                  buttons=['OK', 'Cancel'],
                  kind='livemodal',
                  title='Clear Selection')
@@ -95,7 +99,8 @@ class LabnumberEntryTask(BaseManagerTask, BaseBrowserModel):
                           PreviewGenerateIdentifiersAction(),
                           image_size=(16, 16)),
                  SToolBar(ClearSelectionAction()),
-                 SToolBar(RecoverAction())]
+                 SToolBar(RecoverAction(),
+                          SyncMetaDataAction())]
 
     invert_flag = Bool
     selection_freq = Int
@@ -105,15 +110,22 @@ class LabnumberEntryTask(BaseManagerTask, BaseBrowserModel):
     j_err = Float
     note = Str
     weight = Float
+    sample_search_str = Str
 
     include_recent = False
     _suppress_load_labnumbers = True
 
-    def __init__(self, *args, **kw):
-        super(LabnumberEntryTask, self).__init__(*args, **kw)
-        self.db.create_session()
+    # def __init__(self, *args, **kw):
+    #     super(LabnumberEntryTask, self).__init__(*args, **kw)
+    #     self.db.create_session()
 
     def prepare_destroy(self):
+        self.db.close_session()
+
+    def _opened_hook(self):
+        self.db.create_session()
+
+    def _closed_hook(self):
         self.db.close_session()
 
     def activated(self):
@@ -123,13 +135,20 @@ class LabnumberEntryTask(BaseManagerTask, BaseBrowserModel):
                 self.load_principal_investigators()
                 self.load_projects(include_recent=False)
 
+    def sync_metadata(self):
+        self.info('sync metadata')
+        self.manager.sync_metadata()
+
     def generate_status_report(self):
+        self.info('generate status report')
         self.manager.generate_status_report()
 
     def recover(self):
+        self.info('recover')
         self.manager.recover()
 
     def clear_selection(self):
+        self.info('clear selection')
         cs = ClearSelectionView()
         info = cs.edit_traits()
         if info.result:
@@ -153,8 +172,13 @@ class LabnumberEntryTask(BaseManagerTask, BaseBrowserModel):
         self.info('Transferring J Data')
         self.manager.transfer_j()
 
-    def import_irradiation(self):
-        self.manager.import_irradiation()
+    # def import_irradiation(self):
+    #     self.info('Import irradiation')
+    #     self.manager.import_irradiation()
+
+    # def import_analyses(self):
+    #     self.info('Import analyses')
+    #     self.manager.import_analyses()
 
     def generate_tray(self):
         # p='/Users/ross/Sandbox/entry_tray'
@@ -341,6 +365,11 @@ class LabnumberEntryTask(BaseManagerTask, BaseBrowserModel):
         if new:
             self.manager.set_selected_attr(new, name)
 
+    def _sample_search_str_changed(self, new):
+        if len(new) >= 3:
+            sams = self.db.get_samples(name_like=new)
+            self._set_sample_records(sams)
+
     def _selected_samples_changed(self, new):
         if new:
             ni = new[0]
@@ -355,6 +384,9 @@ class LabnumberEntryTask(BaseManagerTask, BaseBrowserModel):
 
         # load associated samples
         sams = self.db.get_samples(projects=names)
+        self._set_sample_records(sams)
+
+    def _set_sample_records(self, sams):
         sams = [SampleRecordView(si) for si in sams]
 
         self.samples = sams

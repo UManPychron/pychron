@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 import time
 from datetime import datetime, timedelta
 
@@ -25,6 +26,7 @@ from pychron.core.ui.pie_clock import PieClockModel
 from pychron.experiment.duration_tracker import AutomatedRunDurationTracker
 from pychron.loggable import Loggable
 from pychron.pychron_constants import MEASUREMENT_COLOR, EXTRACTION_COLOR, NULL_STR
+from six.moves import map
 
 
 class ExperimentStats(Loggable):
@@ -156,10 +158,10 @@ class ExperimentStats(Loggable):
             def convert_hexcolor_to_int(c):
                 c = c[1:]
                 func = lambda i: int(c[i:i + 2], 16)
-                return map(func, (0, 2, 4))
+                return list(map(func, (0, 2, 4)))
 
-            ec, mc = map(convert_hexcolor_to_int,
-                         (EXTRACTION_COLOR, MEASUREMENT_COLOR))
+            ec, mc = list(map(convert_hexcolor_to_int,
+                         (EXTRACTION_COLOR, MEASUREMENT_COLOR)))
 
             self.clock.set_slices([extraction_slice, measurement_slice],
                                   [ec, mc])
@@ -181,11 +183,12 @@ class ExperimentStats(Loggable):
                 sh = a.script_hash
 
                 if sh in self.duration_tracker:
-                    t = a.make_truncated_script_hash()
-                    if a.has_conditionals() and t in self.duration_tracker:
-                        run_dur += self.duration_tracker.probability_model(sh, t)
-                    else:
-                        run_dur += self.duration_tracker[sh]
+                    # t = a.make_truncated_script_hash()
+                    # if a.has_conditionals() and t in self.duration_tracker:
+                    #     run_dur += self.duration_tracker.probability_model(sh, t)
+                    # else:
+                    #     run_dur += self.duration_tracker[sh]
+                    run_dur += self.duration_tracker[sh]
                 else:
                     run_dur += a.get_estimated_duration(script_ctx, warned, True)
                 d = a.get_delay_after(self.delay_between_analyses, self.delay_after_blank, self.delay_after_air)
@@ -223,7 +226,8 @@ class StatsGroup(ExperimentStats):
 
     # @caller
     def reset(self):
-        self.nruns = sum([len(ei.cleaned_automated_runs) for ei in self.experiment_queues])
+        # self.debug('resetting experiment stats. nruns={}, '
+        #            'nqueues={}'.format(self.nruns, len(self.experiment_queues)))
         self.calculate(force=True)
         super(StatsGroup, self).reset()
 
@@ -234,6 +238,8 @@ class StatsGroup(ExperimentStats):
         """
 
         if force or not self._total_time:
+            self.nruns = sum([len(ei.cleaned_automated_runs) for ei in self.experiment_queues])
+
             self.debug('calculating experiment stats')
             tt = sum([ei.stats.calculate_duration(ei.cleaned_automated_runs)
                       for ei in self.experiment_queues])

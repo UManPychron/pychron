@@ -15,9 +15,13 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
+
+from sqlalchemy.exc import InternalError
 from traits.api import HasTraits, Str, Date, Long, Bool
 
 from pychron.experiment.utilities.identifier import get_analysis_type
+import six
 
 
 class RecordView(object):
@@ -71,8 +75,14 @@ class SampleRecordView(RecordView):
     identifier = ''
     principal_investigator = ''
     note = ''
+    id = None
+
+    def __str__(self):
+        return self.name
 
     def _create(self, dbrecord):
+        self.id = dbrecord.id
+
         if dbrecord.material:
             self.material = dbrecord.material.name
             self.grainsize = dbrecord.material.grainsize or ''
@@ -132,12 +142,12 @@ class LabnumberRecordView(RecordView):
         sample = dbrecord.sample
         if sample:
             if sample.material:
-                if isinstance(sample.material, (str, unicode)):
+                if isinstance(sample.material, (str, six.text_type)):
                     self.material = sample.material
                 else:
                     self.material = sample.material.name
             if sample.project:
-                if isinstance(sample.material, (str, unicode)):
+                if isinstance(sample.material, (str, six.text_type)):
                     self.project = sample.project
                 else:
                     self.project = sample.project.name
@@ -149,9 +159,13 @@ class LabnumberRecordView(RecordView):
             else:
                 dbattr = attr
             try:
-                v = getattr(sample, dbattr)
-                if v is not None:
-                    setattr(self, attr, v)
+                try:
+                    v = getattr(sample, dbattr)
+                    if v is not None:
+                        setattr(self, attr, v)
+                except InternalError:
+                    pass
+
             except AttributeError:
                 pass
 
@@ -188,6 +202,14 @@ class NameView(HasTraits):
     @property
     def id(self):
         return self.name
+
+
+class LoadRecordView(RecordView, NameView):
+    def _create(self, dbrecord):
+        if not isinstance(dbrecord, str):
+            self.name = dbrecord.name
+        else:
+            self.name = dbrecord
 
 
 class ProjectRecordView(RecordView, NameView):

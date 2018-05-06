@@ -13,13 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===============================================================================
+from __future__ import absolute_import
 from traits.api import Float
 from traitsui.api import View, Item, RangeEditor
 
+from pychron.spectrometer.fieldmixin import FieldMixin
 from pychron.spectrometer.spectrometer_device import SpectrometerDevice
 
 
-class BaseSource(SpectrometerDevice):
+class BaseSource(SpectrometerDevice, FieldMixin):
     nominal_hv = Float(4500)
     current_hv = Float(4500)
 
@@ -30,17 +32,14 @@ class BaseSource(SpectrometerDevice):
         # self.read_trap_current()
         # self.read_hv()
 
-    def traits_view(self):
-        v = View(Item('nominal_hv', format_str='%0.4f'),
-                 Item('current_hv', format_str='%0.4f', style='readonly'),
-                 Item('trap_current'),
-                 Item('y_symmetry', editor=RangeEditor(low_name='y_symmetry_low',
-                                                       high_name='y_symmetry_high',
-                                                       mode='slider')),
-                 Item('z_symmetry', editor=RangeEditor(low_name='z_symmetry_low',
-                                                       high_name='z_symmetry_high',
-                                                       mode='slider')),
-                 Item('extraction_lens'))
-        return v
+    def set_hv(self, new):
+        pass
+
+    # private
+    def _nominal_hv_changed(self, new):
+        if new is not None:
+            self.set_hv(new)
+
+
 
 # ============= EOF =============================================

@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from traits.api import Dict
 # ============= standard library imports ========================
 from numpy.random import random
@@ -22,6 +23,7 @@ import os
 # ============= local library imports  ==========================
 from pychron.loggable import Loggable
 from pychron.paths import paths
+from six.moves import map
 
 
 def write_txt_file(p, out):
@@ -62,7 +64,7 @@ class AutomatedRunDurationTracker(Loggable):
         self._frequencies = freq
 
     def update(self, run, t):
-        rh = run.spec.script_hash_truncated
+        rh = run.spec.script_hash
         self.debug('update duration runid={}, duration={}, md5={}'.format(run.spec.runid, t, rh[:8]))
 
         p = paths.duration_tracker
@@ -82,7 +84,7 @@ class AutomatedRunDurationTracker(Loggable):
                         if h == rh:
                             exists = True
 
-                            ds = map(float, ds)
+                            ds = list(map(float, ds))
                             ds.append(t)
                             ds = ds[-10:]
                             if len(ds):
@@ -125,18 +127,18 @@ class AutomatedRunDurationTracker(Loggable):
         write_txt_file(p, out)
         self.load()
 
-    def probability_model(self, h, ht):
-        self.debug('using probability model')
-        prob = self._frequencies.get(h, 0)
-
-        self.debug('probability: {}'.format(prob))
-        # probability run is truncated
-        if random() < prob:
-            h = ht
-            self.debug('use truncated duration')
-
-        dur = self._items[h]
-        return dur
+    # def probability_model(self, h, ht):
+    #     self.debug('using probability model')
+    #     prob = self._frequencies.get(h, 0)
+    #
+    #     self.debug('probability: {}'.format(prob))
+    #     # probability run is truncated
+    #     if random() < prob:
+    #         h = ht
+    #         self.debug('use truncated duration')
+    #     print self._items
+    #     dur = self._items[h]
+    #     return dur
 
     def __contains__(self, v):
         return v in self._items

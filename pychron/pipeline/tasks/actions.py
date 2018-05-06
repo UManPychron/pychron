@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 import os
 
 from pyface.confirmation_dialog import confirm
@@ -40,15 +41,15 @@ class RunAction(TaskAction):
     name = 'Run'
     method = 'run'
     image = icon('start')
-    visible_name = 'run_enabled'
+    visible_name = 'engine.run_enabled'
     accelerator = 'Ctrl+R'
 
 
 class ResumeAction(TaskAction):
     name = 'Resume'
     method = 'resume'
-    image = icon('resume')
-    visible_name = 'resume_enabled'
+    image = icon('edit-redo-3')
+    visible_name = 'engine.resume_enabled'
 
 
 class RunFromAction(TaskAction):
@@ -286,29 +287,29 @@ class ExtractionAction(Action):
 
 
 # ============= Quick Series ====================================
-class LastNAnalysesSeriesAction(PipelineAction):
-    name = 'Last N...'
-    action = 'set_last_n_analyses_template'
-
-
-class LastNHoursSeriesAction(PipelineAction):
-    name = 'Last N Hours...'
-    action = 'set_last_n_hours_template'
-
-
-class LastDaySeriesAction(PipelineAction):
-    name = 'Last Day'
-    action = 'set_last_day_template'
-
-
-class LastWeekSeriesAction(PipelineAction):
-    name = 'Last Week'
-    action = 'set_last_week_template'
-
-
-class LastMonthSeriesAction(PipelineAction):
-    name = 'Last Month'
-    action = 'set_last_month_template'
+# class LastNAnalysesSeriesAction(PipelineAction):
+#     name = 'Last N...'
+#     action = 'set_last_n_analyses_template'
+#
+#
+# class LastNHoursSeriesAction(PipelineAction):
+#     name = 'Last N Hours...'
+#     action = 'set_last_n_hours_template'
+#
+#
+# class LastDaySeriesAction(PipelineAction):
+#     name = 'Last Day'
+#     action = 'set_last_day_template'
+#
+#
+# class LastWeekSeriesAction(PipelineAction):
+#     name = 'Last Week'
+#     action = 'set_last_week_template'
+#
+#
+# class LastMonthSeriesAction(PipelineAction):
+#     name = 'Last Month'
+#     action = 'set_last_month_template'
 
 
 # ============= tag =============================================

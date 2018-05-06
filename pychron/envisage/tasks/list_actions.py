@@ -15,9 +15,10 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 import os
 import time
-from Queue import Queue, Empty
+from six.moves.queue import Queue, Empty
 from threading import Thread
 
 import yaml
@@ -30,6 +31,8 @@ from pychron.core.ui.gui import invoke_in_main_thread
 from pychron.experiment.automated_run.hop_util import parse_hop
 from pychron.lasers.laser_managers.ilaser_manager import ILaserManager
 from pychron.paths import paths
+from six.moves import range
+from six.moves import zip
 
 
 class ShowMotionConfigureAction(TaskAction):
@@ -49,7 +52,7 @@ class PatternAction(ListAction):
     def perform(self, event):
         app = event.task.application
         man = app.get_service(ILaserManager, 'name=="{}"'.format(self.manager_name))
-        man.execute_pattern(self.pattern_path, lase=self.lase)
+        man.execute_pattern(self.pattern_path, lase=self.lase, thread_safe=False)
 
 
 from traits.api import HasTraits, Int
@@ -123,7 +126,7 @@ class HopsAction(ListAction):
     def _perform(self, app, ncycles, hops, msg_queue):
         ion = app.get_service('pychron.spectrometer.ion_optics.ion_optics_manager.IonOpticsManager')
         spec = app.get_service('pychron.spectrometer.base_spectrometer_manager.BaseSpectrometerManager')
-        for cycle in xrange(ncycles):
+        for cycle in range(ncycles):
             for hop in hops:
                 if not self._alive:
                     break
@@ -144,7 +147,9 @@ class HopsAction(ListAction):
                     detector = positioning['detector']
                     pos = positioning['isotope']
 
-                zd = zip(dets, defls)
+                use_af_demag = positioning.get('use_af_demag', False)
+
+                zd = list(zip(dets, defls))
 
                 # set deflections
                 deflect = len([d for d in defls if d is not None])
@@ -156,16 +161,42 @@ class HopsAction(ListAction):
                     spec.protect_detector(pd, True)
 
                 msg_queue.put('Position {} {}'.format(pos, detector))
-                ion.position(pos, detector, use_dac=use_dac, update_isotopes=False)
+                ion.position(pos, detector, use_dac=use_dac, update_isotopes=False, use_af_demag=use_af_demag)
 
                 for pd in pdets:
                     spec.protect_detector(pd, False)
 
-                for i in xrange(settle):
+                for i in range(settle):
                     msg_queue.put('Position {} {}. Settle {}'.format(pos, detector, settle - i))
                     time.sleep(1)
 
         self._alive = False
+
+
+class SpectrometerScriptAction(ListAction):
+    script_path = Str
+
+    def perform(self, event):
+        app = event.task.application
+        tid = 'pychron.spectrometer'
+        manager = app.task_is_open(tid)
+        task = app.get_task('pychron.pyscript.task', activate=False)
+        # context = {'analysis_type': 'blank' if 'blank' in name else 'unknown'}
+
+        context = {}
+        root = os.path.dirname(self.script_path)
+        name = os.path.basename(self.script_path)
+
+        info = lambda x: '======= {} ======='.format(x)
+        # manager = app.get_service('pychron.spectrometer.scan_manager.ScanManager')
+        manager.info(info('Started Spectrometer script "{}"'.format(name)))
+
+        task.execute_script(name, root,
+                            delay_start=1,
+                            manager=manager,
+                            kind='Spectrometer',
+                            on_completion=lambda: manager.info(info('Finished Spectrometer Script "{}"'.format(name))),
+                            context=context)
 
 
 class ProcedureAction(ListAction):
@@ -179,8 +210,8 @@ class ProcedureAction(ListAction):
     #         ex = ex.experimentor.executor
     #         ex.on_trait_change(self._update_alive, 'alive')
 
-    def _update_alive(self, new):
-        self.enabled = not new
+    # def _update_alive(self, new):
+    #     self.enabled = not new
 
     def perform(self, event):
         app = event.task.application

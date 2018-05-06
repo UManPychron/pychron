@@ -15,21 +15,24 @@
 # ===============================================================================
 # ============= enthought library imports =======================
 
+from __future__ import absolute_import
+from __future__ import print_function
 import logging
 
 from numpy import asarray, column_stack, ones, \
-    matrix, sqrt, dot, linalg, zeros_like, hstack
+    matrix, sqrt, dot, linalg, zeros_like, hstack, ones_like
 from statsmodels.api import OLS
 from traits.api import Int, Property
 
 from pychron.core.helpers.fits import FITS
 from pychron.pychron_constants import MSEM
 from pychron.pychron_constants import SEM
+from six.moves import range
 
 logger = logging.getLogger('Regressor')
 
 # ============= local library imports  ==========================
-from base_regressor import BaseRegressor
+from .base_regressor import BaseRegressor
 
 
 class OLSRegressor(BaseRegressor):
@@ -116,12 +119,12 @@ class OLSRegressor(BaseRegressor):
                 ols = self._engine_factory(fy, X, check_integrity=integrity_check)
                 self._ols = ols
                 self._result = ols.fit()
-            except Exception, e:
+            except Exception as e:
                 import traceback
 
                 traceback.print_exc()
 
-    def calculate_error_envelope2(self, fx, fy):
+    def calculate_prediction_envelope(self, fx, fy):
         from statsmodels.sandbox.regression.predstd import wls_prediction_std
 
         prstd, iv_l, iv_u = wls_prediction_std(self._result)
@@ -275,6 +278,13 @@ class OLSRegressor(BaseRegressor):
 
         # def calculate_x(self, y):
         # return 0
+    def _get_rsquared(self):
+        if self._result:
+            return self._result.rsquared
+
+    def _get_rsquared_adj(self):
+        if self._result:
+            return self._result.rsquared_adj
 
     def _calculate_coefficients(self):
         """
@@ -337,7 +347,7 @@ class OLSRegressor(BaseRegressor):
         if xs is None:
             xs = self.clean_xs
 
-        cols = [pow(xs, i) for i in xrange(self.degree + 1)]
+        cols = [pow(xs, i) for i in range(self.degree + 1)]
         return column_stack(cols)
 
 
@@ -360,10 +370,10 @@ class MultipleLinearRegressor(OLSRegressor):
         if xs is None:
             xs = self.clean_xs
 
-        r, c = xs.shape
-        if c == 2:
-            xs = column_stack((xs, ones(r)))
-            return xs
+        xs = asarray(xs)
+        x1, x2 = xs.T
+        xs = column_stack((x1, x2, ones_like(x1)))
+        return xs
 
 
 if __name__ == '__main__':
@@ -381,9 +391,9 @@ if __name__ == '__main__':
     xs = [(0, 0), (1, 0), (2, 0)]
     ys = [0, 1, 2.01]
     r = MultipleLinearRegressor(xs=xs, ys=ys, fit='linear')
-    print r.predict([(0, 1)])
-    print r.predict_error([(0, 2)])
-    print r.predict_error([(0.1, 1)])
+    print(r.predict([(0, 1)]))
+    print(r.predict_error([(0, 2)]))
+    print(r.predict_error([(0.1, 1)]))
 # ============= EOF =============================================
 # def predict_error_al(self, x, error_calc='sem'):
 #        result = self._result

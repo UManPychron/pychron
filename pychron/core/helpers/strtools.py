@@ -18,6 +18,8 @@
 # ============= standard library imports ========================
 # ============= local library imports  ==========================
 
+from __future__ import absolute_import
+from six.moves import map
 def camel_case(name, delimiters=None):
     if delimiters is None:
         delimiters = ('_', '/', ' ')
@@ -33,7 +35,7 @@ def camel_case(name, delimiters=None):
 def to_list(a, delimiter=',', mapping=None):
     l = a.split(delimiter)
     if mapping:
-        l = map(mapping, l)
+        l = list(map(mapping, l))
     return l
 
 
@@ -63,5 +65,7 @@ def to_bool(a):
     if a in tks:
         return True
     elif a in fks:
+        return False
+    else:
         return False
 # ============= EOF =============================================

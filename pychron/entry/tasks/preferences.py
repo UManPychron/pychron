@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from envisage.ui.tasks.preferences_pane import PreferencesPane
 from traits.api import Str, Float, Password
 from traitsui.api import View, Item, Group, VGroup, HGroup, UItem
@@ -39,8 +40,8 @@ class LabnumberEntryPreferencesPane(PreferencesPane):
         irradiation_grp = Group(Item('irradiation_prefix',
                                      label='Irradiation Prefix',
                                      tooltip='Irradiation Prefix e.g., NM-'),
-                                HGroup(UItem('monitor_name', label='Name'),
-                                       UItem('monitor_material', label='Material'),
+                                HGroup(Item('monitor_name', label='Name'),
+                                       Item('monitor_material', label='Material'),
                                        show_border=True, label='Monitor'),
                                 Item('j_multiplier', label='J Multiplier',
                                      tooltip='J units per hour'),

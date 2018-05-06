@@ -14,6 +14,7 @@
 # limitations under the License.
 # ===============================================================================
 
+from __future__ import absolute_import
 import os
 import shutil
 import time
@@ -21,7 +22,7 @@ from threading import Thread
 
 import yaml
 from pyface.timer.do_later import do_later
-from traits.api import TraitError, Instance, Float, provides, Bool, Str, Property
+from traits.api import TraitError, Instance, Float, provides, Bool, Str, Property, Int
 
 from pychron.canvas.canvas2D.dumper_canvas import DumperCanvas
 from pychron.canvas.canvas2D.video_canvas import VideoCanvas
@@ -34,7 +35,7 @@ from pychron.furnace.configure_dump import ConfigureDump
 from pychron.furnace.furnace_controller import FurnaceController
 from pychron.furnace.ifurnace_manager import IFurnaceManager
 from pychron.furnace.loader_logic import LoaderLogic
-from pychron.furnace.magnet_dumper import NMGRLMagnetDumper
+from pychron.furnace.magnet_dumper import NMGRLMagnetDumper, NMGRLRotaryDumper, BaseDumper
 from pychron.furnace.stage_manager import NMGRLFurnaceStageManager, BaseFurnaceStageManager
 from pychron.graph.time_series_graph import TimeSeriesStreamStackedGraph
 from pychron.hardware.furnace.nmgrl.camera import NMGRLCamera
@@ -87,7 +88,8 @@ class Funnel(LinearAxis):
 class NMGRLFurnaceManager(BaseFurnaceManager):
     funnel = Instance(Funnel)
     loader_logic = Instance(LoaderLogic)
-    magnets = Instance(NMGRLMagnetDumper)
+    dumper = Instance(BaseDumper)
+
     temperature_readback_min = Float(0)
     temperature_readback_max = Float(1600.0)
 
@@ -97,7 +99,8 @@ class NMGRLFurnaceManager(BaseFurnaceManager):
 
     mode = 'normal'
 
-    water_flow_led = Instance(LED, ())
+    # water_flow_led = Instance(LED, ())
+    water_flow_state = Int
 
     video_enabled = Bool
     video_canvas = Instance(VideoCanvas)
@@ -288,19 +291,19 @@ class NMGRLFurnaceManager(BaseFurnaceManager):
             self.status_txt = 'Actuating Magnets'
 
             self.stage_manager.feeder.start_jitter()
-            self.magnets.energize()
+            self.dumper.energize()
 
             time.sleep(0.05)
             while 1:
-                if not self.magnets.is_energized():
+                if not self.dumper.is_moving():
                     break
                 time.sleep(1)
 
             self.stage_manager.set_sample_dumped()
             self._dump_sample_states()
 
-            self.magnets.denergize()
-            time.sleep(5)
+            self.dumper.denergize()
+            # time.sleep(5)
 
             self.stage_manager.feeder.stop_jitter()
             self.status_txt = ''
@@ -444,7 +447,7 @@ class NMGRLFurnaceManager(BaseFurnaceManager):
         return v
 
     def no_dump(self):
-        v = not self.magnets.dump_in_progress()
+        v = not self.dumper.dump_in_progress()
         self.debug('no dump {}'.format(v))
         return v
 
@@ -513,9 +516,10 @@ class NMGRLFurnaceManager(BaseFurnaceManager):
         if d:
             state = d.get('h2o_state')
             if state in (0, 1):
-                self.water_flow_led.state = 2 if state else 0
+                # self.water_flow_led.state = 2 if state else 0
+                self.water_flow_state = 2 if state else 0
             else:
-                self.water_flow_led.state = 1
+                self.water_flow_state = 1
 
             with open(os.path.join(paths.data_dir, 'furnace_water.txt'), 'a') as wfile:
                 wfile.write('{},{}\n'.format(time.time(), state))
@@ -714,8 +718,9 @@ class NMGRLFurnaceManager(BaseFurnaceManager):
 
         return l
 
-    def _magnets_default(self):
-        m = NMGRLMagnetDumper(name='magnets', configuration_dir_name='furnace')
+    def _dumper_default(self):
+        # m = NMGRLMagnetDumper(name='magnets', configuration_dir_name='furnace')
+        m = NMGRLRotaryDumper(name='dumper', configuration_dir_name='furnace')
         return m
 
 # ============= EOF =============================================

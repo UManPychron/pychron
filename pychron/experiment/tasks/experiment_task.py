@@ -13,16 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===============================================================================
-
-import os
-import shutil
-import time
-
-import xlrd
 from pyface.constant import CANCEL, NO
 from pyface.tasks.task_layout import PaneItem, TaskLayout, Splitter, Tabbed
 from pyface.timer.do_later import do_after
 from traits.api import Int, on_trait_change, Bool, Instance, Event, Color
+
+import os
+import shutil
+import time
+import xlrd
 
 from pychron.core.helpers.filetools import add_extension, backup
 from pychron.core.ui.preference_binding import color_bind_preference
@@ -51,15 +50,7 @@ class ExperimentEditorTask(EditorTask):
     default_open_action = 'open files'
     wildcard = '*.txt'
 
-    use_notifications = Bool
-    use_syslogger = Bool
-    notifications_port = Int
-    notifier = Instance('pychron.messaging.notify.notifier.Notifier', ())
-
     loading_manager = Instance('pychron.loading.loading_manager.LoadingManager')
-
-    # use_syslogger = Bool
-    # syslogger = Instance('pychron.experiment.sys_log.SysLogger')
 
     # analysis_health = Instance(AnalysisHealth)
     last_experiment_changed = Event
@@ -100,18 +91,6 @@ class ExperimentEditorTask(EditorTask):
         if pm.load_pattern():
             open_view(pm)
 
-    def send_test_notification(self):
-        self.debug('sending test notification')
-        db = self.manager.db
-        # an=db.get_last_analysis('bu-FD-o')
-        an = db.get_last_analysis('ba-01-o')
-        an = self.manager.make_analysis(an)
-        if an:
-            self.debug('test push {}'.format(an.record_id))
-            self._publish_notification(an)
-        else:
-            self.debug('problem recalling last analysis')
-
     def deselect(self):
         if self.active_editor:
             self.active_editor.queue.selected = []
@@ -132,8 +111,7 @@ class ExperimentEditorTask(EditorTask):
                 dnames = spec.spectrometer.detector_names
 
             edit_conditionals(self.manager.experiment_factory.queue_factory.queue_conditionals_name,
-                              detectors=dnames,
-                              app=self.application)
+                              detectors=dnames)
 
     def reset_queues(self):
         for editor in self.editor_area.editors:
@@ -141,8 +119,9 @@ class ExperimentEditorTask(EditorTask):
 
         man = self.manager
         ex = man.executor
+        ex.stats.reset()
+
         man.update_info()
-        man.stats.reset()
 
         ex.end_at_run_completion = False
         ex.set_extract_state('')
@@ -166,8 +145,7 @@ class ExperimentEditorTask(EditorTask):
             if manager.load():
                 self.manager.experiment_factory.activate(load_persistence=True)
 
-                editor = ExperimentEditor(application=self.application)
-                editor.setup_tabular_adapters(self.bgcolor, self.even_bgcolor, self._assemble_state_colors())
+                editor = self._editor_factory()
                 editor.new_queue()
 
                 self._open_editor(editor)
@@ -186,18 +164,7 @@ class ExperimentEditorTask(EditorTask):
         # notifications
 
         self._preference_binder('pychron.experiment',
-                                ('use_notifications',
-                                 'notifications_port',
-                                 'automated_runs_editable'))
-
-        # force notifier setup
-        if self.use_notifications:
-            self.notifier.setup(self.notifications_port)
-
-        # sys logger
-        # bind_preference(self, 'use_syslogger', 'pychron.use_syslogger')
-        # if self.use_syslogger:
-        # self._use_syslogger_changed()
+                                ('automated_runs_editable',))
 
         color_bind_preference(self, 'bgcolor', 'pychron.experiment.bg_color')
         color_bind_preference(self, 'even_bgcolor', 'pychron.experiment.even_bg_color')
@@ -215,10 +182,7 @@ class ExperimentEditorTask(EditorTask):
         super(ExperimentEditorTask, self).prepare_destroy()
 
         self.manager.experiment_factory.destroy()
-        self.manager.executor.notification_manager.parent = None
-
-        if self.use_notifications:
-            self.notifier.close()
+        # self.manager.executor.notification_manager.parent = None
 
         self._do_callables(self.deactivations)
 
@@ -238,8 +202,8 @@ class ExperimentEditorTask(EditorTask):
         explanation_pane.set_colors(self._assemble_state_colors())
 
         ex = self.manager.executor
-        panes = [StatsPane(model=self.manager.stats),
-                 ControlsPane(model=ex),
+        panes = [StatsPane(model=ex.stats),
+                 ControlsPane(model=ex, task=self),
                  ConsolePane(model=ex),
                  LoggerPane(),
                  # AnalysisHealthPane(model=self.analysis_health),
@@ -267,6 +231,15 @@ class ExperimentEditorTask(EditorTask):
         return panes
 
     # private
+    def _editor_factory(self, is_uv=False, **kw):
+        klass = UVExperimentEditor if is_uv else ExperimentEditor
+        editor = klass(application=self.application,
+                       automated_runs_editable=self.automated_runs_editable,
+                       **kw)
+
+        editor.setup_tabular_adapters(self.bgcolor, self.even_bgcolor, self._assemble_state_colors())
+        return editor
+
     def _assemble_state_colors(self):
         colors = {}
         for c in ('success', 'extraction', 'measurement', 'canceled', 'truncated',
@@ -281,18 +254,12 @@ class ExperimentEditorTask(EditorTask):
             if hasattr(fi, '__call__'):
                 try:
                     fi()
-                except BaseException, e:
+                except BaseException as e:
                     import traceback
                     traceback.print_exc()
-                    self.debug('Callable {} failed. exception={}'.format(fi.func_name, str(e)))
+                    self.debug('Callable {} failed. exception={}'.format(fi.__name__, str(e)))
             else:
                 self.debug('{} not callable'.format(fi))
-
-    def _open_abort(self):
-        try:
-            self.notifier.close()
-        except AttributeError:
-            pass
 
     def _open_file(self, path, **kw):
         if not isinstance(path, (tuple, list)):
@@ -339,11 +306,8 @@ class ExperimentEditorTask(EditorTask):
             else:
                 txt, is_uv = self._open_txt(path)
 
-            klass = UVExperimentEditor if is_uv else ExperimentEditor
-            editor = klass(path=path,
-                           application=self.application,
-                           automated_runs_editable=self.automated_runs_editable)
-            editor.setup_tabular_adapters(self.bgcolor, self.even_bgcolor, self._assemble_state_colors())
+            editor = self._editor_factory(is_uv=is_uv, path=path)
+
             editor.new_queue(txt)
             self._open_editor(editor)
         else:
@@ -411,7 +375,7 @@ class ExperimentEditorTask(EditorTask):
     def _save_file(self, path):
         if self.active_editor.save(path):
             self.manager.refresh_executable()
-            self.debug('queues saved')
+            self.debug('queue saved')
             self.manager.reset_run_generator()
             return True
 
@@ -431,12 +395,6 @@ class ExperimentEditorTask(EditorTask):
             name = name.replace(' ', '_')
 
             return 'Load{}'.format(name)
-
-    def _publish_notification(self, run):
-        if self.use_notifications:
-            # msg = 'RunAdded {}'.format(run.uuid)
-            # self.info('pushing notification {}'.format(msg))
-            self.notifier.send_notification(run.uuid)
 
     def _prompt_for_save(self):
         """
@@ -507,10 +465,6 @@ class ExperimentEditorTask(EditorTask):
             self.manager.experiment_queue = self.active_editor.queue
             self.manager.executor.active_editor = self.active_editor
             self._show_pane(self.experiment_factory_pane)
-
-    @on_trait_change('manager:executor:auto_save_event')
-    def _auto_save(self):
-        self.save()
 
     @on_trait_change('loading_manager:group_positions')
     def _update_group_positions(self, new):
@@ -612,18 +566,9 @@ class ExperimentEditorTask(EditorTask):
         if new is not None:
             self.isotope_evolution_pane.plot_panel = new
 
-    @on_trait_change('manager:executor:console_updated')
-    def _update_console(self, new):
-        if self.use_notifications:
-            self.notifier.send_console_message(new)
-
-            # if self.use_syslogger:
-            # self.syslogger.executor = self.manager.executor
-            #     self.syslogger.trigger(new)
-
     @on_trait_change('manager:executor:run_completed')
     def _update_run_completed(self, new):
-        self._publish_notification(new)
+        # self._publish_notification(new)
 
         load_name = self.manager.executor.experiment_queue.load_name
         if load_name:
@@ -645,9 +590,8 @@ class ExperimentEditorTask(EditorTask):
                     pass
                 break
 
-    @on_trait_change('manager:execute_event')
-    def _execute(self, obj, name, old, new):
-        self.debug('execute event {} {}'.format(id(self), id(obj)))
+    def execute(self):
+        # self.debug('execute event {} {}'.format(id(self), id(obj)))
 
         if self.editor_area.editors:
             try:
@@ -760,8 +704,8 @@ class ExperimentEditorTask(EditorTask):
         plugin = ip.get_plugin('Experiment', category='general')
         mode = ip.get_parameter(plugin, 'mode')
 
-        proto = 'pychron.database.isotope_database_manager.IsotopeDatabaseManager'
-        iso_db_man = self.application.get_service(proto)
+        # proto = 'pychron.database.isotope_database_manager.IsotopeDatabaseManager'
+        # iso_db_man = self.application.get_service(proto)
         # experimentor.iso_db_man = iso_db_man
 
         proto = 'pychron.dvc.dvc.DVC'
@@ -769,7 +713,7 @@ class ExperimentEditorTask(EditorTask):
         # experimentor.dvc = dvc
 
         experimentor = Experimentor(application=self.application,
-                                    mode=mode, dvc=dvc, iso_db_man=iso_db_man)
+                                    mode=mode, dvc=dvc)
 
         experimentor.executor.set_managers()
         experimentor.executor.bind_preferences()

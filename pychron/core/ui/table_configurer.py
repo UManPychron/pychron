@@ -14,6 +14,7 @@
 # limitations under the License.
 # ===============================================================================
 
+from __future__ import absolute_import
 import os
 # ============= enthought library imports =======================
 import pickle
@@ -32,6 +33,7 @@ from traitsui.tabular_adapter import TabularAdapter
 
 from pychron.paths import paths
 from pychron.pychron_constants import ISOTOPES
+from six.moves import range
 
 SIZES = (6, 8, 9, 10, 11, 12, 14, 15, 18, 24, 36)
 
@@ -211,21 +213,22 @@ class TableConfigurer(HasTraits):
         self.columns = self.available_columns
         self.set_columns()
 
-    def _adapter_changed(self, adp):
-        if adp:
-            acols = [c for c, _ in adp.all_columns]
+    def set_adapter(self, adp):
+        self.adapter = adp
+    # def _adapter_changed(self, adp):
+    #     if adp:
+        acols = [c for c, _ in adp.all_columns]
 
-            # set currently visible columns
-            t = [c for c, _ in adp.columns]
+        # set currently visible columns
+        t = [c for c, _ in adp.columns]
 
-            cols = [c for c in acols if c in t]
-            self.trait_setq(columns=cols)
+        cols = [c for c in acols if c in t]
+        self.trait_set(columns=cols)
 
-            # set all available columns
-            self.available_columns = acols
-
-            self._set_font(adp.font)
-            self._load_state()
+        # set all available columns
+        self.available_columns = acols
+        self._set_font(adp.font)
+        self._load_state()
 
     def traits_view(self):
         v = View(VGroup(HGroup(UItem('show_all', tooltip='Show all columns'),

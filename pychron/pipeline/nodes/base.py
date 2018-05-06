@@ -15,15 +15,18 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
-from traits.api import HasTraits, Bool, Any, List
+from __future__ import absolute_import
+from traits.api import HasTraits, Bool, Any, List, Str
 from traitsui.api import View
+import six
 
 
 # ============= standard library imports ========================
 # ============= local library imports  ==========================
+from pychron.column_sorter_mixin import ColumnSorterMixin
 
 
-class BaseNode(HasTraits):
+class BaseNode(ColumnSorterMixin):
     name = 'Base'
     enabled = Bool(True)
     visited = Bool(False)
@@ -41,8 +44,12 @@ class BaseNode(HasTraits):
     unknowns = List
     references = List
     required = List
+    index = -1
+
+    skip_meaning = Str
 
     def clear_data(self):
+        print('clearing data')
         self.unknowns = []
         self.references = []
 
@@ -52,7 +59,7 @@ class BaseNode(HasTraits):
         self.active = False
 
     def pre_load(self, nodedict):
-        for k, v in nodedict.iteritems():
+        for k, v in nodedict.items():
             if hasattr(self, k):
                 setattr(self, k, v)
 
@@ -71,10 +78,13 @@ class BaseNode(HasTraits):
     def pre_run(self, state, configure=True):
 
         if not self.auto_configure:
+            print('not auto configure')
             return True
 
         if self._manual_configured:
+            print('manually configured')
             return True
+
         if state.unknowns:
             self.unknowns = state.unknowns
         if state.references:
@@ -114,15 +124,19 @@ class BaseNode(HasTraits):
                 else:
                     obj = self
 
+            self._configure_hook()
             info = obj.edit_traits(kind='livemodal')
             if info.result:
-                self.finish_configure()
+                self._finish_configure()
                 self.refresh()
                 return True
         else:
             return True
 
-    def finish_configure(self):
+    def _configure_hook(self):
+        pass
+
+    def _finish_configure(self):
         pass
 
     def to_template(self):
@@ -152,4 +166,7 @@ class BaseNode(HasTraits):
     def __str__(self):
         return '{}<{}>'.format(self.name, self.__class__.__name__)
 
+
+class SortableNode(BaseNode, ColumnSorterMixin):
+    pass
 # ============= EOF =============================================

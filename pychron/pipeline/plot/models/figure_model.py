@@ -15,11 +15,14 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from itertools import groupby
 
 from traits.api import HasTraits, List, Property, Any, Instance
+from six.moves import zip
 
-from pychron.pipeline.plot.layout import FigureLayout
+# from pychron.pipeline.plot.layout import FigureLayout
+from pychron.core.codetools.inspection import caller
 
 
 class FigureModel(HasTraits):
@@ -31,7 +34,7 @@ class FigureModel(HasTraits):
     _panel_klass = Instance('pychron.pipeline.plotters.figure_panel.FigurePanel')
     titles = List
 
-    layout = Instance(FigureLayout, ())
+    # layout = Instance(FigureLayout, ())
     analysis_groups = List
 
     def refresh(self, force=False):
@@ -61,6 +64,7 @@ class FigureModel(HasTraits):
     # def _analyses_items_changed(self):
     #     self.refresh_panels()
 
+    @caller
     def refresh_panels(self):
         ps = self._make_panels()
         self.panels = ps
@@ -81,7 +85,7 @@ class FigureModel(HasTraits):
             gg = groupby(self.references, key=key)
             for gi in gs:
                 try:
-                    gid, ais = gg.next()
+                    gid, ais = next(gg)
                     gi.references = list(ais)
                 except StopIteration:
                     break
@@ -102,6 +106,6 @@ class FigureModel(HasTraits):
         return len(self.panels)
 
     def next_panel(self):
-        return self.panel_gen.next()
+        return next(self.panel_gen)
 
         # ============= EOF =============================================

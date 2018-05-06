@@ -15,9 +15,6 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
-import os
-import time
-from itertools import groupby
 
 from pyface.timer.do_later import do_later
 from traits.api import Any, on_trait_change, Int, List, Bool, \
@@ -25,12 +22,16 @@ from traits.api import Any, on_trait_change, Int, List, Bool, \
 from traits.trait_types import Date
 from traitsui.api import View, Item, UItem
 
+import os
+import time
+from itertools import groupby
+
 from pychron.core.helpers.ctx_managers import no_update
+from pychron.core.select_same import SelectSameMixin
 from pychron.core.ui.gui import invoke_in_main_thread
 from pychron.core.ui.qt.tabular_editor import MoveToRow
 from pychron.envisage.view_util import open_view
 from pychron.experiment.queue.base_queue import BaseExperimentQueue
-from pychron.experiment.queue.select_attr_view import SelectAttrView
 from pychron.experiment.utilities.human_error_checker import HumanErrorChecker
 from pychron.experiment.utilities.identifier import make_runid
 from pychron.experiment.utilities.uv_human_error_checker import UVHumanErrorChecker
@@ -62,7 +63,7 @@ class NewRunBlockView(HasTraits):
         return v
 
 
-class ExperimentQueue(BaseExperimentQueue):
+class ExperimentQueue(BaseExperimentQueue, SelectSameMixin):
     executed_selected = Any
     dclicked = Any
     database_identifier = Long
@@ -71,9 +72,7 @@ class ExperimentQueue(BaseExperimentQueue):
     executed_runs = List
     executed_runs_scroll_to_row = Int
     automated_runs_scroll_to_row = Int
-    # linked_copy_cache = List
     start_timestamp = Date
-    # queue_actions = List
     auto_save_detector_ic = Bool
 
     executed = Bool(False)
@@ -82,6 +81,9 @@ class ExperimentQueue(BaseExperimentQueue):
     execution_ratio = Property
 
     refresh_blocks_needed = Event
+
+    default_attr = 'identifier'
+
     _auto_save_time = 0
     _temp_analysis = None
 
@@ -96,7 +98,7 @@ class ExperimentQueue(BaseExperimentQueue):
         else:
             bk = os.path.join(paths.auto_save_experiment_dir, 'Untitled.bak')
 
-        self.debug('Autosaving to {}'.format(bk))
+        self.debug('hAutosaving to {}'.format(bk))
         with open(bk, 'w') as wfile:
             self.dump(wfile)
 
@@ -177,37 +179,22 @@ class ExperimentQueue(BaseExperimentQueue):
         ident = self.selected[0].identifier
         self._select_same(lambda si: si.identifier == ident)
 
-    def select_same_attr(self):
+    def _get_records(self):
+        return self.cleaned_automated_runs
 
+    def _get_selection_attrs(self):
         hs, attrs = self._get_dump_attrs()
-        hs = list(attrs)
-
-        ev = SelectAttrView(available_attributes=hs)
-        ev.on_trait_change(self._handle_select_attributes, 'attributes')
-        ev.edit_traits()
-        # if info.result:
-            # if ev.attributes:
-            #
-            #     s = self.selected[0]
-            #     def test(v):
-            #         return all([getattr(v, k) == getattr(s, k) for k in ev.attributes])
-            #
-            #     self._select_same(test)
-    def _handle_select_attributes(self, attributes):
-        if attributes:
-            s = self.selected[0]
-            def test(v):
-                return all([getattr(v, k) == getattr(s, k) for k in attributes])
-
-            self._select_same(test)
-
-    def _select_same(self, test):
-        self.selected = [si for si in self.cleaned_automated_runs if test(si)]
+        return list(attrs)
 
     def count_labnumber(self, ln):
-        ans = [ai for ai in self.automated_runs if ai.labnumber == ln]
+        ans = [ai for ai in self.automated_runs if ai.labnumber == ln and ai.is_step_heat()]
         i = 0
-        for _ in groupby(ans, key=lambda x: x.user_defined_aliquot):
+
+        def key(x):
+            return x.user_defined_aliquot
+
+        ans = sorted(ans, key=key)
+        for _ in groupby(ans, key=key):
             i += 1
         return i
 
@@ -401,7 +388,8 @@ class ExperimentQueue(BaseExperimentQueue):
             idx = self.automated_runs.index(new[-1])
             self.debug('SSSSSSSSSSSSSS set AR scroll to {}'.format(idx))
             self.refresh_info_needed = True
-            invoke_in_main_thread(do_later, lambda: self.trait_set(automated_runs_scroll_to_row=idx))
+            self.automated_runs_scroll_to_row = idx
+            # invoke_in_main_thread(do_later, lambda: self.trait_set(automated_runs_scroll_to_row=idx))
 
     @on_trait_change('automated_runs:state')
     def _refresh_table1(self):

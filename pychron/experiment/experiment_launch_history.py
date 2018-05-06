@@ -14,6 +14,7 @@
 # limitations under the License.
 # ===============================================================================
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 import os
 import time
 
@@ -41,7 +42,7 @@ def update_launch_history(path):
                         t += 1
                         l = time.time()
                         exists = True
-                    out.append((l, t, p))
+                    out.append((float(l), t, p))
 
     if not exists:
         out.append((time.time(), 1, path))

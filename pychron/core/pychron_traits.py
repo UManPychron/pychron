@@ -15,10 +15,13 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
-from traits.api import BaseStr, Int
+from __future__ import absolute_import
+from traits.api import BaseStr, Int, String
 # ============= standard library imports ========================
 import re
 # ============= local library imports  ==========================
+from traitsui.group import VGroup, HGroup
+
 from pychron.core.filtering import validate_filter_predicate
 
 IPREGEX = re.compile(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
@@ -50,4 +53,28 @@ class FilterPredicate(BaseStr):
     def _validate(self, value):
         return validate_filter_predicate(value)
 
+
+EMAIL_REGEX = re.compile(r'(^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$)')
+
+
+class EmailStr(String):
+    regex = EMAIL_REGEX
+
+
+class SingleStr(BaseStr):
+    def validate(self, obj, name, value):
+        if value and len(value) > 1:
+            self.error(obj, name, value)
+        else:
+            return value
+
+
+class BorderVGroup(VGroup):
+    def _show_border_default(self):
+        return True
+
+
+class BorderHGroup(HGroup):
+    def _show_border_default(self):
+        return True
 # ============= EOF =============================================

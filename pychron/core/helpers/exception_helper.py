@@ -15,16 +15,17 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
-import threading
 
+from __future__ import absolute_import
+from __future__ import print_function
 import traits.trait_notifiers
 from pyface.message_dialog import warning
 from traits.api import HasTraits, Str, List
 from traitsui.api import View, UItem, Item, HGroup, VGroup, CheckListEditor, Controller, TextEditor
 from traitsui.menu import Action
 # ============= standard library imports ========================
+import threading
 import base64
-import json
 import requests
 import logging
 import traceback
@@ -32,6 +33,7 @@ import sys
 import os
 import pickle
 # ============= local library imports  ==========================
+from pychron import json
 from pychron.github import GITHUB_API_URL
 from pychron.globals import globalv
 from pychron.paths import paths
@@ -88,8 +90,12 @@ def report_issues():
     p = os.path.join(paths.hidden_dir, 'issues.p')
     if os.path.isfile(p):
         nonreported = []
-        with open(p, 'r') as rfile:
-            issues = pickle.load(rfile)
+        with open(p, 'rb') as rfile:
+            try:
+                issues = pickle.load(rfile)
+            except BaseException:
+                os.remove(p)
+                return
 
             for issue in issues:
                 result = create_issue(issue)
@@ -98,7 +104,7 @@ def report_issues():
                     nonreported.append(issue)
 
         if nonreported:
-            with open(p, 'w') as wfile:
+            with open(p, 'wb') as wfile:
                 pickle.dump(nonreported, wfile)
         else:
             os.remove(p)
@@ -116,11 +122,8 @@ def create_issue(issue):
                       'Pychron will quit when this window is closed'.format(usr))
         sys.exit()
 
-    auth = base64.encodestring('{}:{}'.format(usr, pwd)).replace('\n', '')
-    headers = {"Authorization": "Basic {}".format(auth)}
-
     kw = {'data': json.dumps(issue),
-          'headers': headers}
+          'auth': (usr, pwd)}
 
     if globalv.cert_file:
         kw['verify'] = globalv.cert_file
@@ -153,7 +156,7 @@ Enter a <b>Title</b>, select a few <b>Labels</b> and add a <b>Description</b> of
         if globalv.active_analyses:
             try:
                 ret = ','.join([ai.record_id for ai in globalv.active_analyses])
-            except AttributeError, e:
+            except AttributeError as e:
                 ret = '{}\n\n{}'.format(e, str(globalv.active_analyses))
         return ret
 
@@ -174,13 +177,13 @@ class ExceptionHandler(Controller):
         if not os.path.isfile(p):
             issues = []
         else:
-            with open(p, 'r') as rfile:
+            with open(p, 'rb') as rfile:
                 issues = pickle.load(rfile)
 
         issue = self._make_issue()
 
         issues.append(issue)
-        with open(p, 'w') as wfile:
+        with open(p, 'wb') as wfile:
             pickle.dump(issues, wfile)
 
     def _make_issue(self):
@@ -192,9 +195,10 @@ class ExceptionHandler(Controller):
 
     def _make_body(self):
         m = self.model
-        return 'active branch={}\n\nactive analyses={}\n\n{}\n\n```\n{}\n```'.format(m.active_branch,
-                                                                                     m.active_analyses,
-                                                                                     m.description, m.exctext)
+        return 'active branch={}\n\nactive analyses={}\n' \
+               '\ndescription="{}"\n\nTraceback\n```\n{}\n```'.format(m.active_branch,
+                                                                      m.active_analyses,
+                                                                      m.description, m.exctext)
 
     def traits_view(self):
         v = View(VGroup(UItem('helpstr',
@@ -223,16 +227,16 @@ def ignored_exceptions(exctype, value, tb):
     tb = traceback.extract_tb(tb)
 
     if '/pychron/' not in tb[0][0] and '/pychron/' not in tb[-1][0]:
-        print 'ignore exception'
+        print('ignore exception')
         return True
 
     if exctype in (RuntimeError, KeyboardInterrupt):
         return True
 
-    if value in ("'NoneType' object has no attribute 'text'",
-                 "'NoneType' object has no attribute 'size'",
-                 "too many indices for array"):
-        return True
+    return str(value) in ("'NoneType' object has no attribute 'text'",
+                          "'NoneType' object has no attribute 'size'",
+                          "too many indices for array",
+                          "unsupported operand type(s) for +=: 'NoneType' and 'list'")
 
 
 def except_handler(exctype, value, tb):

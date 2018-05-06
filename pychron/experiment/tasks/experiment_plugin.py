@@ -14,6 +14,7 @@
 # limitations under the License.
 # ===============================================================================
 
+from __future__ import absolute_import
 from envisage.extension_point import ExtensionPoint
 from envisage.ui.tasks.task_extension import TaskExtension
 from envisage.ui.tasks.task_factory import TaskFactory
@@ -28,7 +29,7 @@ from pychron.experiment.run_history_view import RunHistoryView, RunHistoryModel
 from pychron.experiment.signal_calculator import SignalCalculator
 from pychron.experiment.tasks.experiment_actions import NewExperimentQueueAction, \
     OpenExperimentQueueAction, SignalCalculatorAction, \
-    DeselectAction, SendTestNotificationAction, \
+    DeselectAction, \
     NewPatternAction, OpenPatternAction, ResetQueuesAction, OpenLastExperimentQueueAction, UndoAction, \
     QueueConditionalsAction, ConfigureEditorTableAction, SystemConditionalsAction, ResetSystemHealthAction, \
     OpenExperimentHistoryAction, LastAnalysisRecoveryAction, OpenCurrentExperimentQueueAction, \
@@ -99,7 +100,6 @@ class ExperimentPlugin(BaseTaskPlugin):
     def _help_tips_default(self):
         return ['You can set the Analysis State colors in Preferences>Experiment',
                 'You can set the color for Sniff, Signal, and Baseline datapoints in Preferences>Experiment',
-                'The current version of Pychron contains over 147K lines of code',
                 'If the last analysis fails to save you can recover it using Tools/Recover Last Analysis']
 
     def _task_extensions_default(self):
@@ -145,8 +145,6 @@ class ExperimentPlugin(BaseTaskPlugin):
                                  path='MenuBar/file.menu/Open'),
                   SchemaAddition(id='pychron.experiment.launch_history', factory=OpenExperimentHistoryAction,
                                  path='MenuBar/file.menu/Open'),
-                  SchemaAddition(id='pychron.experiment.test_notify', factory=SendTestNotificationAction,
-                                 path='MenuBar/file.menu'),
                   SchemaAddition(id='pychron.experiment.new_experiment', factory=NewExperimentQueueAction,
                                  path='MenuBar/file.menu/New'),
                   SchemaAddition(id='pychron.experiment.signal_calculator', factory=SignalCalculatorAction,

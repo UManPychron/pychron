@@ -15,6 +15,8 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
+from __future__ import print_function
 import hashlib
 import uuid
 from datetime import datetime
@@ -28,7 +30,10 @@ from pychron.experiment.automated_run.result import AutomatedRunResult, AirResul
 from pychron.experiment.utilities.identifier import get_analysis_type, make_rid, make_runid, is_special, \
     convert_extract_device
 from pychron.experiment.utilities.position_regex import XY_REGEX
+from pychron.experiment.utilities.repository_identifier import make_references_repository_identifier
 from pychron.pychron_constants import SCRIPT_KEYS, SCRIPT_NAMES, ALPHAS, DETECTOR_IC
+import six
+from six.moves import map
 
 logger = new_logger('AutomatedRunSpec')
 
@@ -57,7 +62,6 @@ class AutomatedRunSpec(HasTraits):
     username = Str
     tray = Str
     queue_conditionals_name = Str
-    laboratory = Str
     # ===========================================================================
     # run id
     # ===========================================================================
@@ -124,12 +128,14 @@ class AutomatedRunSpec(HasTraits):
     # display only
     # ===========================================================================
     project = Str
+    principal_investigator = Str
     sample = Str
     irradiation = Str
     irradiation_level = Str
     irradiation_position = Int
     material = Str
     data_reduction_tag = Str
+    result_str = ''
 
     branch = 'master'
 
@@ -166,6 +172,7 @@ class AutomatedRunSpec(HasTraits):
 
         result = klass()
         result.runid = self.runid
+        result.analysis_timestamp = datetime.now()
         result.isotope_group = arun.isotope_group
         result.tripped_conditional = arun.tripped_conditional
 
@@ -182,6 +189,9 @@ class AutomatedRunSpec(HasTraits):
 
     def is_truncated(self):
         return self.state == 'truncated'
+
+    def is_default_repository(self, ms, curtag):
+        return make_references_repository_identifier(self.analysis_type, ms, curtag) == self.repository_identifier
 
     def to_string(self):
         attrs = ['labnumber', 'aliquot', 'step',
@@ -327,16 +337,16 @@ class AutomatedRunSpec(HasTraits):
             elif self.analysis_type.startswith('blank'):
                 d = db
 
-            # d = db if self.analysis_type.startswith('blank') else du
+                # d = db if self.analysis_type.startswith('blank') else du
 
         return d
 
     def load(self, script_info, params):
-        for k, v in script_info.iteritems():
+        for k, v in six.iteritems(script_info):
             k = k if k == 'script_options' else '{}_script'.format(k)
             setattr(self, k, v)
 
-        for k, v in params.iteritems():
+        for k, v in six.iteritems(params):
             # print 'load', hasattr(self, k), k, v
             if hasattr(self, k):
                 setattr(self, k, v)
@@ -365,7 +375,7 @@ class AutomatedRunSpec(HasTraits):
             else:
                 try:
                     v = getattr(self, attrname)
-                except AttributeError, e:
+                except AttributeError as e:
                     v = ''
 
             return v
@@ -427,7 +437,7 @@ class AutomatedRunSpec(HasTraits):
 
         if verbose:
             for t in traits:
-                print '{} ==> {}'.format(t, getattr(self, t))
+                print('{} ==> {}'.format(t, getattr(self, t)))
 
         return self.clone_traits(traits)
 
@@ -493,7 +503,7 @@ post_equilibration_script, extraction_script, script_options, position, duration
             args = v
         else:
             try:
-                args = map(int, v.split(','))
+                args = list(map(int, v.split(',')))
             except ValueError:
                 logger.debug('Invalid overlap string "{}". Should be of the form "10,60" or "10" '.format(v))
                 return
@@ -603,8 +613,8 @@ post_equilibration_script, extraction_script, script_options, position, duration
 
         md5 = hashlib.md5()
         for k, v in sorted(ctx.items()):
-            md5.update(str(k))
-            md5.update(str(v))
+            md5.update(str(k).encode('utf-8'))
+            md5.update(str(v).encode('utf-8'))
         return md5
 
 # ============= EOF =============================================

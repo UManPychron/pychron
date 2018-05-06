@@ -16,17 +16,20 @@
 
 # ============= enthought library imports =======================
 
+from __future__ import absolute_import
 import logging
 import math
 import re
 
-from numpy import where, delete
+from numpy import where, delete, polyfit
 from traits.api import Array, List, Event, Property, Any, \
     Dict, Str, Bool, cached_property, HasTraits
 
 from pychron.core.stats.core import calculate_mswd, validate_mswd
 from pychron.pychron_constants import ALPHAS, PLUSMINUS
-from tinv import tinv
+from .tinv import tinv
+from six.moves import range
+from six.moves import zip
 
 logger = logging.getLogger('BaseRegressor')
 
@@ -95,7 +98,27 @@ class BaseRegressor(HasTraits):
 
     @property
     def sem(self):
-        return self.std/self.n**0.5
+        return self.std / self.n ** 0.5
+
+    @property
+    def rsquared(self):
+        return self._get_rsquared()
+
+    def _get_rsquared(self):
+        return 0
+
+    @property
+    def rsquared_adj(self):
+        return self._get_rsquared_adj()
+
+    def _get_rsquared_adj(self):
+        return 0
+
+    def get_xsquared_coefficient(self):
+        x = self.clean_xs
+        y = self.clean_ys
+        a, b, c = polyfit(x, y, 2)
+        return b
 
     def calculate_filtered_data(self):
         fod = self.filter_outliers_dict
@@ -179,21 +202,25 @@ class BaseRegressor(HasTraits):
         if residuals is None:
             residuals = self.calculate_residuals()
 
-        ss_res = (residuals ** 2).sum()
+        s = 0
+        if residuals is not None:
+            ss_res = (residuals ** 2).sum()
 
-        n = residuals.shape[0]
-        q = len(self.coefficients)
-        s = (ss_res / (n - q)) ** 0.5
-        # print 'cccc', s
+            n = residuals.shape[0]
+            q = len(self.coefficients)
+            s = (ss_res / (n - q)) ** 0.5
+
         return s
 
     def calculate_residuals(self):
         if self._result:
             return self._result.resid
         else:
-            return self.clean_ys - self.predict(self.clean_xs)
+            xs, ys = self.clean_xs, self.clean_ys
+            if self._check_integrity(xs, ys):
+                return ys - self.predict(xs)
 
-    def calculate_error_envelope(self, rx, rmodel=None, error_calc=None ):
+    def calculate_error_envelope(self, rx, rmodel=None, error_calc=None):
         if rmodel is None:
             rmodel = self.predict(rx)
 
@@ -313,7 +340,7 @@ class BaseRegressor(HasTraits):
 
             # print rx, cors[0]
 
-            return cors/2.
+            return cors / 2.
 
     def _delete_filtered_hook(self, outliers):
         pass

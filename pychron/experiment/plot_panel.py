@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 import time
 from threading import Event
 
@@ -96,7 +97,6 @@ class PlotPanel(Loggable):
     graph_container = Instance(GraphContainer)
     # analysis_view = Instance(ArArAutomatedRunAnalysisView, ())
     analysis_view = Instance('pychron.processing.analyses.view.automated_run_view.AutomatedRunAnalysisView')
-
     isotope_group = Instance(IsotopeGroup)
 
     sniff_graph = Instance(Graph)
@@ -135,7 +135,7 @@ class PlotPanel(Loggable):
     hops = List
 
     info_func = None
-    integration_time = 1.1
+    integration_time = 1.05
 
     def set_peak_center_graph(self, graph):
         graph.page_name = 'Peak Center'
@@ -210,8 +210,8 @@ class PlotPanel(Loggable):
 
             self.figure.replot()
 
-    def new_plot(self, **kw):
-        return self._new_plot(**kw)
+    def new_isotope_plot(self, **kw):
+        return self._new_plot(isotope_only=True, **kw)
 
     def set_analysis_view(self, experiment_type, **kw):
         if experiment_type == AR_AR:
@@ -264,19 +264,23 @@ class PlotPanel(Loggable):
         self.selected_graph = g
 
     # private
-    def _new_plot(self, **kw):
+    def _new_plot(self, isotope_only=False, **kw):
+        # self.isotope_graph.clear()
+        # self.sniff_graph.clear()
+        # self.baseline_graph.clear()
         plots = {}
-        for k, g in (('sniff', self.sniff_graph),
-                     ('isotope', self.isotope_graph),
-                     ('baseline', self.baseline_graph)):
-            plot = g.new_plot(xtitle='time (s)', padding_left=70,
-                              padding_right=10,
-                              **kw)
+        for k, g, e in (('sniff', self.sniff_graph, not isotope_only),
+                        ('isotope', self.isotope_graph, True),
+                        ('baseline', self.baseline_graph, not isotope_only)):
+            if e:
+                plot = g.new_plot(xtitle='time (s)', padding_left=70,
+                                  padding_right=10,
+                                  **kw)
 
-            plot.y_axis.title_spacing = 50
-            g.add_axis_tool(plot, plot.x_axis)
-            g.add_axis_tool(plot, plot.y_axis)
-            plots[k] = plot
+                plot.y_axis.title_spacing = 50
+                g.add_axis_tool(plot, plot.x_axis)
+                g.add_axis_tool(plot, plot.y_axis)
+                plots[k] = plot
 
         return plots
 
@@ -286,6 +290,10 @@ class PlotPanel(Loggable):
         g = self.isotope_graph
         self.selected_graph = g
 
+        self.isotope_graph.clear()
+        self.sniff_graph.clear()
+        self.baseline_graph.clear()
+        self.debug('creating plots for detectors {}'.format(self.detectors))
         for det in self.detectors:
             self._new_plot(ytitle=det.name)
 
@@ -293,6 +301,9 @@ class PlotPanel(Loggable):
 
     def _get_ncounts(self):
         return self._ncounts
+
+    def set_ncounts(self, v):
+        self._ncounts = v
 
     def _set_ncounts(self, v):
 

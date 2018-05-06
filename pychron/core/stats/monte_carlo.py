@@ -16,8 +16,10 @@
 
 # ============= enthought library imports =======================
 # ============= standard library imports ========================
-from numpy import zeros, percentile, array
+from __future__ import absolute_import
+from numpy import zeros, percentile, array, median
 from scipy.stats import norm
+from six.moves import range
 # ============= local library imports  ==========================
 
 
@@ -32,12 +34,13 @@ def monte_carlo_error_estimation(reg, nominal_ys, pts, ntrials=100):
     res = zeros((ntrials, len(pts)))
 
     pred = reg.fast_predict2
-    for i in xrange(ntrials):
+    for i in range(ntrials):
         res[i] = perturb(pred, exog, nominal_ys, yes, ga[i], yp)
 
     res = res.T
     ret = zeros(len(pts))
     pct = (15.87, 84.13)
+    # pct = (2.27, 97.73)
     for i, po in enumerate(pts):
         ri = res[i]
         ai, bi = percentile(ri, pct)
@@ -48,7 +51,7 @@ def monte_carlo_error_estimation(reg, nominal_ys, pts, ntrials=100):
 
 def perturb(pred, exog, nominal_ys, y_es, ga, yp):
     for i, (y, e) in enumerate(y_es):
-        yp[i] = y + e * ga[i]
+        yp[i] = y + (e * ga[i])
 
     pys = pred(yp, exog)
     return nominal_ys - pys

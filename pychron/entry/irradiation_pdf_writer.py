@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.units import inch
@@ -29,6 +30,10 @@ from pychron.core.pdf.options import BasePDFOptions, dumpable
 from pychron.dvc.meta_repo import irradiation_holder_holes, irradiation_chronology
 from pychron.entry.editors.level_editor import load_holder_canvas
 from pychron.loading.component_flowable import ComponentFlowable
+from pychron.pychron_constants import DEFAULT_MONITOR_NAME
+from six.moves import range
+
+MATERIAL_MAP = {'GroundmassConcentrate': 'GMC'}
 
 
 class RotatedParagraph(Paragraph):
@@ -165,17 +170,20 @@ class IrradiationPDFWriter(BasePDFTableWriter):
         header = Row()
         header.add_item(value='<b>Level</b>')
         header.add_item(value='<b>Tray</b>')
+        header.add_item(value='<b>Project</b>')
 
         def make_row(level):
             row = Row()
+
             row.add_item(value=level.name)
             row.add_item(value=level.holder)
+            row.add_item(value=', '.join(level.projects))
             return row
 
         rows = [make_row(li) for li in sorted(irrad.levels, key=lambda x: x.name)]
         rows.insert(0, header)
 
-        t = self._new_table(ts, rows, col_widths=[1*inch, 2*inch])
+        t = self._new_table(ts, rows, col_widths=[0.5*inch, 1*inch, 5*inch])
         return t
 
     def _make_level_table(self, irrad, level, c):
@@ -190,7 +198,7 @@ class IrradiationPDFWriter(BasePDFTableWriter):
 
         srows = []
         spos = sorted(level.positions, key=lambda x: x.position)
-        for i in xrange(c.scene.nholes):
+        for i in range(c.scene.nholes):
             pos = i + 1
             item = next((p for p in spos if p.position == pos), None)
             if not item:
@@ -226,7 +234,7 @@ class IrradiationPDFWriter(BasePDFTableWriter):
         r = Row()
         r.add_item(value='[  ]')
         r.add_item(value=pos)
-        for i in xrange(6):
+        for i in range(6):
             r.add_item(value='')
 
         return r
@@ -237,11 +245,14 @@ class IrradiationPDFWriter(BasePDFTableWriter):
         project, pi, material = '', '', ''
         if sample:
             if sample.material:
-                material = sample.material.name[:15]
+                material = sample.material.name
+                material = MATERIAL_MAP.get(material, material)
+                material = material[:15]
+
             project = sample.project.name
             pi = sample.project.principal_investigator.name
             sample = sample.name
-            if sample == 'FC-2':
+            if sample == DEFAULT_MONITOR_NAME:
                 project, pi, material = '', '', ''
 
         r.add_item(value='[  ]')
@@ -249,8 +260,8 @@ class IrradiationPDFWriter(BasePDFTableWriter):
         r.add_item(value=pos.identifier or '')
         r.add_item(value=sample or '')
         r.add_item(value=material, fontsize=8)
-        r.add_item(value=project)
-        r.add_item(value=pi)
+        r.add_item(value=project, fontsize=8)
+        r.add_item(value=pi, fontsize=8)
         r.add_item(value='')
 
         if sample:

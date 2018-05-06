@@ -15,6 +15,8 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import socket
 
@@ -39,7 +41,7 @@ DEBUG = False
 def get_sftp_client(host, user, password):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    print host, user, password
+    print(host, user, password)
     try:
         ssh.connect(host, username=user, password=password, timeout=2)
     except (socket.timeout, paramiko.AuthenticationException):
@@ -501,7 +503,9 @@ class SamplePrep(DVCAble, PersistenceMixin):
     @cached_property
     def _get_samples(self):
         if self.project:
-            ss = self.dvc.get_samples(projects=self.project, principal_investigators=self.principal_investigator)
+            ss = self.dvc.get_samples(projects=self.project,
+                                      principal_investigators=self.principal_investigator,
+                                      verbose_query=False)
             return [self._sample_record_factory(si) for si in ss]
         else:
             return []

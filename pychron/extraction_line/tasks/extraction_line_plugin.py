@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 import os
 
 from envisage.extension_point import ExtensionPoint
@@ -60,6 +61,9 @@ class ExtractionLinePlugin(BaseTaskPlugin):
     #                                    ('canvas_config_path', os.path.join(paths.canvas2D_dir, 'canvas_config.xml')),
     #                                    ('valves_path', os.path.join(paths.extraction_line_dir, 'valves.xml'))),
     #                                    'pychron.extraction_line')
+
+    def test_cryo_communication(self):
+        return self._test('test_cryo_communication')
 
     def test_gauge_communication(self):
         return self._test('test_gauge_communication')

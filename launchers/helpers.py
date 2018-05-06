@@ -14,16 +14,12 @@
 # limitations under the License.
 # ===============================================================================
 # ============= enthought library imports =======================
-from pyface.util.guisupport import get_app_qt4
+from __future__ import absolute_import
+from __future__ import print_function
 from traits.etsconfig.api import ETSConfig
 from traitsui.qt4.ui_panel import heading_text
 
 from pychron.environment.util import set_application_home
-
-ETSConfig.toolkit = "qt4"
-
-from ConfigParser import NoSectionError
-
 from pyface.confirmation_dialog import confirm
 from pyface.message_dialog import warning
 
@@ -45,22 +41,22 @@ warnings.simplefilter("ignore")
 logger = logging.getLogger()
 
 
-def set_stylesheet(path):
-    app = get_app_qt4()
-    app.setStyle('plastique')
-
-    if path is None:
-        import shutil
-
-        force = True
-        default_css = 'darkorange.css'
-        from pychron.paths import paths
-        path = paths.hidden_path(default_css)
-        if not os.path.isfile(path) or force:
-            shutil.copyfile(default_css, path)
-
-    with open(path, 'r') as rfile:
-        app.setStyleSheet(rfile.read())
+# def set_stylesheet(path):
+#     app = get_app_qt4()
+#     app.setStyle('plastique')
+#
+#     if path is None:
+#         import shutil
+#
+#         force = True
+#         default_css = 'darkorange.css'
+#         from pychron.paths import paths
+#         path = paths.hidden_path(default_css)
+#         if not os.path.isfile(path) or force:
+#             shutil.copyfile(default_css, path)
+#
+#     with open(path, 'r') as rfile:
+#         app.setStyleSheet(rfile.read())
 
 
 def monkey_patch_preferences():
@@ -321,18 +317,27 @@ def monkey_patch_checkbox_render():
     checkbox_renderer.CheckboxRenderer = CheckboxRenderer
 
 
-def entry_point(appname, klass, debug=False):
+KLASS_MAP = {'pyexperiment': 'PyExperiment',
+             'pyview': 'PyView',
+             'pyvalve': 'PyValve',
+             'pyco2': 'PyCO2',
+             'pydiode': 'PyDiode',
+             'pysampleprep': 'PySamplePrep'}
+
+
+def entry_point(appname, debug=False):
     """
         entry point
     """
+    klass = KLASS_MAP.get(appname)
 
     monkey_patch_preferences()
     monkey_patch_checkbox_render()
     monkey_patch_panel()
 
+    # set_stylesheet('darkorange.css')
     env = initialize_version(appname, debug)
     if env:
-
         # set_stylesheet(None)
 
         if debug:
@@ -472,7 +477,7 @@ def initialize_version(appname, debug):
     logger.debug('using Pychron environment: {}'.format(env))
     paths.build(env)
 
-    from ConfigParser import ConfigParser
+    from configparser import ConfigParser, NoSectionError
     cp = ConfigParser()
     pref_path = os.path.join(ETSConfig.application_home, 'preferences.ini')
     cp.read(pref_path)
@@ -528,13 +533,13 @@ def add_eggs(root):
             for egg_name in eggs:
                 # sys.path.insert(0, os.path.join(root, egg_name))
                 sys.path.append(os.path.join(root, egg_name))
-                print os.path.join(root, egg_name)
+                print(os.path.join(root, egg_name))
 
 
 def build_globals(user, debug):
     try:
         from pychron.envisage.initialization.initialization_parser import InitializationParser
-    except ImportError, e:
+    except ImportError as e:
         from pyface.message_dialog import warning
 
         warning(None, str(e))

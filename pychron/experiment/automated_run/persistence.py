@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 import binascii
 import math
 import os
@@ -33,6 +34,8 @@ from pychron.loggable import Loggable
 from pychron.paths import paths
 from pychron.processing.export.export_spec import MassSpecExportSpec
 from pychron.pychron_constants import NULL_STR, DETECTOR_IC
+import six
+from six.moves import zip
 
 DEBUG = False
 
@@ -145,7 +148,7 @@ class ExcelPersister(BasePersister):
         wb.save(path)
 
     def _save_isotopes(self, sh):
-        for i, (k, iso) in enumerate(self.per_spec.isotope_group.isotopes.items()):
+        for i, (k, iso) in enumerate(self.per_spec.isotope_group.items()):
 
             sh.write(0, i, '{} time'.format(k))
             sh.write(0, i + 1, '{} intensity'.format(k))
@@ -214,7 +217,7 @@ class AutomatedRunPersister(BasePersister):
     data_manager = Instance('pychron.managers.data_managers.h5_data_manager.H5DataManager', ())
 
     secondary_database_fail = False
-    use_massspec_database = False
+    use_massspec_database = Bool(False)
     use_analysis_grouping = Bool(False)
     grouping_threshold = Float
     grouping_suffix = Str
@@ -309,7 +312,7 @@ class AutomatedRunPersister(BasePersister):
                         nrow['value'] = signals[keys.index(k)]
                         nrow.append()
                         t.flush()
-                except AttributeError, e:
+                except AttributeError as e:
                     self.debug('error: {} group:{} det:{} iso:{}'.format(e, grpname, k, det.isotope))
 
         return write_data
@@ -552,7 +555,7 @@ class AutomatedRunPersister(BasePersister):
         if self.per_spec.auto_save_detector_ic:
             try:
                 self._save_detector_ic_csv()
-            except BaseException, e:
+            except BaseException as e:
                 self.debug('Failed auto saving detector ic. {}'.format(e))
 
         # don't save detector_ic runs to mass spec
@@ -663,7 +666,7 @@ class AutomatedRunPersister(BasePersister):
         dbhist = db.add_fit_history(analysis,
                                     user=self.per_spec.run_spec.username)
 
-        for iso in self.per_spec.isotope_group.isotopes.itervalues():
+        for iso in self.per_spec.isotope_group.itervalues():
             detname = iso.detector
             dbdet = db.get_detector(detname)
             if dbdet is None:
@@ -833,7 +836,7 @@ class AutomatedRunPersister(BasePersister):
 
         if self.per_spec.spec_dict:
             db.add_spectrometer_parameters(meas, self.per_spec.spec_dict)
-            for det, deflection in self.per_spec.defl_dict.iteritems():
+            for det, deflection in six.iteritems(self.per_spec.defl_dict):
                 det = db.add_detector(det)
                 db.add_deflection(meas, det, deflection)
 
@@ -895,7 +898,7 @@ class AutomatedRunPersister(BasePersister):
                 'selected_{}'.format(name), history)
 
         func = getattr(db, 'add_{}'.format(name))
-        for isotope, v in values.iteritems():
+        for isotope, v in six.iteritems(values):
             uv = v.nominal_value
             ue = float(v.std_dev)
             if preceding_id:

@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 import time
 
 from traits.api import List, Float, Bool
@@ -22,6 +23,7 @@ from traits.api import List, Float, Bool
 from pychron.core.helpers.strtools import to_bool
 from pychron.hardware import get_float
 from pychron.spectrometer.base_magnet import BaseMagnet
+from six.moves import range
 
 
 class ThermoMagnet(BaseMagnet):
@@ -76,26 +78,30 @@ class ThermoMagnet(BaseMagnet):
                 unblank = True
 
         if self.use_af_demagnetization and use_af_demag:
-            if dv > self.af_demag_threshold:
-                self.debug('Move {}>{}. Do AF Demag'.format(dv, self.af_demag_threshold))
+            if dv > self.af_demag_threshold or use_af_demag == 'force':
+                self.debug('Do AF Demag. UseAFDemag={}, delta_volts={}, threshold={}'.format(use_af_demag,
+                                                                                             dv,
+                                                                                             self.af_demag_threshold))
+                self.ask('BlankBeam True', verbose=verbose)
                 self._do_af_demagnetization(v, lambda dd: self.ask('SetMagnetDAC {}'.format(dd)))
-
+        else:
+            self.debug('AF Demag not enabled. self.use_af_demag={}, use_af_demag={}'.format(self.use_af_demagnetization,
+                                                                                            use_af_demag))
         self.ask('SetMagnetDAC {}'.format(v), verbose=verbose)
 
         change = dv > 1e-7
         if change:
-            if not self.simulation:
-                if settling_time is None:
-                    settling_time = self.settling_time
+            if settling_time is None:
+                settling_time = self.settling_time
 
-                self.debug('Magnet settling time: {:0.3f} {:0.3f}'.format(settling_time, self.settling_time))
-                if settling_time > 0:
-                    time.sleep(settling_time)
-                    self.debug('Magnet settling complete')
+            self.debug('Magnet settling time: {:0.3f} {:0.3f}'.format(settling_time, self.settling_time))
+            if settling_time > 0:
+                time.sleep(settling_time)
+                self.debug('Magnet settling complete')
 
             if unprotect or unblank:
                 self.debug('Wait for magnet to stop moving')
-                for i in xrange(50):
+                for i in range(50):
                     if not to_bool(self.ask('GetMagnetMoving', verbose=verbose)):
                         break
                     time.sleep(0.25)
@@ -122,6 +128,5 @@ class ThermoMagnet(BaseMagnet):
     @get_float(default=0)
     def read_dac(self):
         return self.ask('GetMagnetDAC')
-
 
 # ============= EOF =============================================

@@ -16,10 +16,12 @@
 
 # ============= enthought library imports =======================
 # ============= standard library imports ========================
+from __future__ import absolute_import
+from __future__ import print_function
 import ast
 import os
 import time
-from ConfigParser import ConfigParser
+from six.moves.configparser import ConfigParser
 
 import yaml
 
@@ -84,7 +86,7 @@ class MeasurementPyScript(ValvePyScript):
 
     def get_command_register(self):
         cs = super(MeasurementPyScript, self).get_command_register()
-        return cs + command_register.commands.items()
+        return cs + list(command_register.commands.items())
 
     def truncate(self, style=None):
         if style == 'quick':
@@ -147,8 +149,12 @@ class MeasurementPyScript(ValvePyScript):
 
     @count_verbose_skip
     @command_register
-    def sniff(self, ncounts=0, calc_time=False,
-              integration_time=1.04, block=True):
+    def measure_equilibration(self, *args, **kw):
+        self.sniff(*args, **kw)
+
+    @count_verbose_skip
+    @command_register
+    def sniff(self, ncounts=0, calc_time=False, integration_time=1.04, block=True):
         """
         collect a sniff measurement. Sniffs are the measurement of the equilibration gas.
 
@@ -168,7 +174,6 @@ class MeasurementPyScript(ValvePyScript):
                                         self._time_zero, self._time_zero_offset,
                                         series=self._series_count, block=block):
             self.cancel()
-            # self._series_count += 1
 
     @count_verbose_skip
     @command_register
@@ -496,6 +501,11 @@ class MeasurementPyScript(ValvePyScript):
 
     @verbose_skip
     @command_register
+    def position_hv(self, pos, detector='AX'):
+        self._automated_run_call('py_position_hv', pos, detector)
+
+    @verbose_skip
+    @command_register
     def position_magnet(self, pos, detector='AX', use_dac=False):
         """
 
@@ -609,8 +619,8 @@ class MeasurementPyScript(ValvePyScript):
         try:
             ncounts = int(ncounts)
             self.ncounts = ncounts
-        except Exception, e:
-            print 'set_ncounts', e
+        except Exception as e:
+            print('set_ncounts', e)
 
     @verbose_skip
     @command_register
@@ -672,6 +682,28 @@ class MeasurementPyScript(ValvePyScript):
         :type v: int, float
         """
         self._set_spectrometer_parameter('SetZFocus', v)
+
+    @verbose_skip
+    @command_register
+    def set_extraction_focus(self, v):
+        """
+        Set ExtractionFocus to v
+
+        :param v: extractionfocus value
+        :type v: int, float
+        """
+        self._set_spectrometer_parameter('SetExtractionFocus', v)
+
+    @verbose_skip
+    @command_register
+    def set_extraction_symmetry(self, v):
+        """
+        Set Extraction Symmetry to v
+
+        :param v: extraction symmetry value
+        :type v: int, float
+        """
+        self._set_spectrometer_parameter('SetExtractionSymmetry', v)
 
     @verbose_skip
     @command_register
@@ -807,15 +839,16 @@ class MeasurementPyScript(ValvePyScript):
 
         :return: float, int
         """
+        r = 20
         if self.automated_run:
-            return self.automated_run.eqtime
-            # return self._automated_run_call(lambda: self.automated_run.eqtime)
-        else:
-            r = 15
-            cg = self._get_config()
-            if cg.has_option('Default', 'eqtime'):
-                r = cg.getfloat('Default', 'eqtime', )
-            return r
+            r = self.automated_run.eqtime
+
+            if r == -1:
+                r = 20
+                cg = self._get_config()
+                if cg.has_option('Default', 'eqtime'):
+                    r = cg.getfloat('Default', 'eqtime', )
+        return r
 
     @property
     def time_zero_offset(self):
@@ -904,7 +937,7 @@ class MeasurementPyScript(ValvePyScript):
                     mx.create(yd)
                     self._ctx['mx'] = mx
 
-            except yaml.YAMLError, e:
+            except yaml.YAMLError as e:
                 self.debug('failed loading docstring context. {}'.format(e))
         except AttributeError:
             pass

@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= standard library imports ========================
+from __future__ import absolute_import
 from math import isnan
 
 from numpy import hstack, array
@@ -28,6 +29,7 @@ from pychron.pipeline.plot.overlays.spectrum import SpectrumTool, \
 from pychron.pipeline.plot.plotter.arar_figure import BaseArArFigure
 from pychron.processing.analyses.analysis_group import StepHeatAnalysisGroup
 from pychron.pychron_constants import PLUSMINUS, SIGMA, MSEM
+from six.moves import zip
 
 
 class Spectrum(BaseArArFigure):
@@ -81,7 +83,7 @@ class Spectrum(BaseArArFigure):
 
         # filter ys,es if 39Ar < 1% of total
         try:
-            vs, es = zip(*[(vi.nominal_value, vi.std_dev) for vi in vs])
+            vs, es = list(zip(*[(nominal_value(vi), std_dev(vi)) for vi in vs]))
             vs, es = array(vs), array(es)
             nes = es * self.options.step_nsigma
             yl = vs - nes
@@ -109,7 +111,7 @@ class Spectrum(BaseArArFigure):
     # plotters
     # ===============================================================================
 
-    def _plot_aux(self, title, vk, ys, po, plot, pid, es=None, **kw):
+    def _plot_aux(self, title, vk, po, pid):
         graph = self.graph
         if '<sup>' in title or '<sub>' in title:
             self._set_ml_title(title, pid, 'y')
@@ -325,7 +327,6 @@ class Spectrum(BaseArArFigure):
         sel = obj.metadata['selections']
 
         sel1 = self._filter_metadata_changes(obj, self.sorted_analyses)
-        # print sel, sel1
 
         for sp in self.spectrum_overlays:
             sp.selections = sel
@@ -334,7 +335,7 @@ class Spectrum(BaseArArFigure):
             self.plateau_overlay.selections = sel
 
         ag = self.analysis_group
-        ag.dirty = True
+        # ag.dirty = True
 
         if self.age_label:
             # text = self._build_integrated_age_label(ag.integrated_age, ag.nanalyses)
@@ -352,9 +353,9 @@ class Spectrum(BaseArArFigure):
     # utils
     # ===============================================================================
     def _get_age_errors(self, ans):
-        ages, errors = zip(*[(ai.uage.nominal_value,
+        ages, errors = list(zip(*[(ai.uage.nominal_value,
                               ai.uage.std_dev)
-                             for ai in ans])
+                             for ai in ans]))
         return array(ages), array(errors)
 
     def _calculate_spectrum(self,
@@ -385,7 +386,7 @@ class Spectrum(BaseArArFigure):
                 if aa is None:
                     ai, ei = 0, 0
                 else:
-                    ai, ei = aa.nominal_value, aa.std_dev
+                    ai, ei = nominal_value(aa), std_dev(aa)
 
             xs.append(prev)
 

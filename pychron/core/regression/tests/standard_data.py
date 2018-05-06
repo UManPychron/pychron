@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import numpy as np
 
 from numpy import random
@@ -21,7 +22,7 @@ def pearson(expected=False):
                                    mswd=0))
     if expected:
         if not expected in solutions:
-            v = ','.join(solutions.keys())
+            v = ','.join(list(solutions.keys()))
             raise AttributeError('invalid expected value {}. use "{}"'.format(expected, v))
 
         return solutions[expected]
@@ -31,6 +32,7 @@ def pearson(expected=False):
 
 def mean_data(scalar=5, std=1.5, n=1000):
     rs = random.RandomState(123456)
+    n = int(n)
 
     xs = np.linspace(0, 100, n)
     ys = rs.normal(loc=scalar, scale=std, size=n)

@@ -13,9 +13,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===============================================================================
+from __future__ import absolute_import
 from pychron.spectrometer.isotopx.source.base import IsotopxSource
+from six.moves import map
 
 
 class NGXSource(IsotopxSource):
-    pass
+    def set_hv(self, new):
+        self.ask('SSO IE, {}'.format(new))
+
+    def read_hv(self):
+        resp = self.ask('GSO IE', verbose=True)
+        actual = 0
+        if ',' in resp:
+            setpoint, actual = list(map(float, resp.split(',')))
+        return actual
+
+    def read_trap_current(self):
+        resp = self.ask('GSO TC')
+        actual = 0
+        if ',' in resp:
+            setpoint, actual = list(map(float, resp.split(',')))
+        return actual
+
+    def read_emission(self):
+        resp = self.ask('GSO EC')
+        actual = 0
+        if ',' in resp:
+            setpoint, actual = list(map(float, resp.split(',')))
+        return actual
+        # return self.ask('GSO ')
 # ============= EOF =============================================

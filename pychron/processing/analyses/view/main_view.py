@@ -15,25 +15,28 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
-from traits.api import HasTraits, Str, List, Event, Instance, Any, Property, cached_property
+from __future__ import absolute_import
+from traits.api import HasTraits, Str, List, Event, Instance, Any, Property, cached_property, Unicode
 from traitsui.api import View, UItem, VGroup, HGroup
 from uncertainties import std_dev, nominal_value, ufloat
 
-from pychron.core.helpers.formatting import floatfmt, format_percent_error
+from pychron.core.helpers.formatting import floatfmt, format_percent_error, uformat_percent_error
 from pychron.core.ui.tabular_editor import myTabularEditor
 from pychron.processing.analyses.view.adapters import ComputedValueTabularAdapter, \
     DetectorRatioTabularAdapter, ExtractionTabularAdapter, MeasurementTabularAdapter
 from pychron.processing.analyses.view.values import ExtractionValue, ComputedValue, MeasurementValue, DetectorRatio
 
-
 # class MainViewHandler(Handler):
 #     def show_isotope_evolution(self, uiinfo, obj):
 #         isos = obj.selected
 #         obj.show_iso_evo_needed = isos
+from pychron.pychron_constants import PLUSMINUS
 
 
 class MainView(HasTraits):
     name = 'Main'
+
+    summary_str = Unicode
 
     analysis_id = Str
     analysis_type = Str
@@ -71,9 +74,6 @@ class MainView(HasTraits):
             self.refresh_needed = True
 
     def _load(self, an):
-        # self.isotopes = an.isotopes
-        print an.isotope_keys
-
         self.isotopes = [an.isotopes[k] for k in an.isotope_keys]
         self.load_computed(an)
         self.load_extraction(an)
@@ -163,9 +163,9 @@ class MainView(HasTraits):
             ExtractionValue(name='Lab Temp.',
                             value=an.lab_temperature,
                             units='F'),
-           ExtractionValue(name='Lab Hum.',
-                           units='%',
-                           value=an.lab_humidity)]
+            ExtractionValue(name='Lab Hum.',
+                            units='%',
+                            value=an.lab_humidity)]
 
         if 'UV' in an.extract_device:
             extra = [ExtractionValue(name='Mask Pos.',
@@ -210,15 +210,26 @@ class MainView(HasTraits):
     def _make_ratios(self, ratios):
         cv = []
         for name, nd, ref in ratios:
-            dr = DetectorRatio(name=name,
-                               value='',
-                               error='',
-                               noncorrected_value=0,
-                               noncorrected_error=0,
-                               ic_factor='',
-                               ref_ratio=ref,
-                               detectors=nd)
-            cv.append(dr)
+            n, d = nd.split('/')
+            ns = [i for i in self.isotopes if i.name == n]
+            ds = [i for i in self.isotopes if i.name == d]
+
+            add_det_names = len(ns) > 1 or len(ds) > 1
+            for ni in ns:
+                for di in ds:
+                    if add_det_names:
+                        nd = '{}_{}/{}_{}'.format(ni.name, ni.detector, di.name, di.detector)
+                        name = '{}({})/{}({})'.format(ni.name, ni.detector, di.name, di.detector)
+
+                    dr = DetectorRatio(name=name,
+                                       value='',
+                                       error='',
+                                       noncorrected_value=0,
+                                       noncorrected_error=0,
+                                       ic_factor='',
+                                       ref_ratio=ref,
+                                       detectors=nd)
+                    cv.append(dr)
 
         return cv
 
@@ -239,7 +250,7 @@ class MainView(HasTraits):
             except ZeroDivisionError:
                 pass
 
-        return ufloat(0, 1e-20)
+        return ufloat(0, 0)
 
     def _get_corrected_ratio(self, niso, diso):
         """
@@ -258,20 +269,34 @@ class MainView(HasTraits):
                         diso.ic_factor / niso.ic_factor)
             except (ZeroDivisionError, TypeError):
                 pass
-        return ufloat(0, 1e-20), 1
+        return ufloat(0, 0), 1
+
+    def _get_ratio(self, tag):
+        def get_iso(kk):
+            if '_' in kk:
+                iso, det = kk.split('_')
+
+                def test(i):
+                    return i.name == iso and i.detector == det
+            else:
+                def test(i):
+                    return i.name == kk
+
+            return next((v for v in self.isotopes if test(v)), None)
+
+        n, d = tag.split('/')
+
+        niso, diso = get_iso(n), get_iso(d)
+        return niso, diso
 
     def _update_ratios(self):
-        def get_iso(kk):
-            return next((v for v in self.isotopes if v.name == kk), None)
 
         for ci in self.computed_values:
             if not isinstance(ci, DetectorRatio):
                 continue
 
             nd = ci.detectors
-            n, d = nd.split('/')
-
-            niso, diso = get_iso(n), get_iso(d)
+            niso, diso = self._get_ratio(nd)
             if niso and diso:
                 noncorrected = self._get_non_corrected_ratio(niso, diso)
                 corrected, ic = self._get_corrected_ratio(niso, diso)
@@ -291,6 +316,19 @@ class MainView(HasTraits):
             self.computed_values = cv
 
         self._update_ratios()
+
+        try:
+            niso, diso = self._get_ratio('Ar40/Ar36')
+            if niso and diso:
+                noncorrected = self._get_non_corrected_ratio(niso, diso)
+                v, e = nominal_value(noncorrected), std_dev(noncorrected)
+                ref = 295.5
+                self.summary_str = u'Ar40/Ar36={} {}{}({}%) IC={:0.5f}'.format(floatfmt(v),
+                                                                               PLUSMINUS, floatfmt(e),
+                                                                               format_percent_error(v, e),
+                                                                               nominal_value(noncorrected/ref))
+        except:
+            pass
 
     def _load_cocktail_computed(self, an, new_list):
         if new_list:
@@ -313,7 +351,7 @@ class MainView(HasTraits):
                         ref = refs.get(name, 1)
                         ratios.append((name, name, ref))
 
-            print 'ratios a', ratios
+            # print 'ratios a', ratios
             # ratios = [('40Ar/38Ar', 'Ar40/Ar38', nominal_value(c.atm4038)),
             #           ('40Ar/37Ar', 'Ar40/Ar37', 1),
             #           ('40Ar/36Ar', 'Ar40/Ar36', nominal_value(c.atm4036)),
@@ -383,7 +421,7 @@ class MainView(HasTraits):
                 ci.error = std_dev(v)
 
     def _load_unknown_computed(self, an, new_list):
-        attrs = (('Age', 'uage'),
+        attrs = (('Age', 'uage_w_j_err'),
                  # ('Age', 'age', None, None, 'age_err'),
                  ('w/o J', 'wo_j', '', 'uage', 'age_err_wo_j'),
                  ('K/Ca', 'kca'),
@@ -419,6 +457,14 @@ class MainView(HasTraits):
 
             self.computed_values = cv
         else:
+            age = an.uage
+            nage, sage = nominal_value(age), std_dev(age)
+            try:
+                self.summary_str = u'Age={} {}{}({}%)'.format(floatfmt(nage), PLUSMINUS,
+                                                              floatfmt(sage), format_percent_error(nage, sage))
+            except:
+                pass
+
             for ci in self.computed_values:
                 attr = ci.tag
                 if attr == 'wo_j':

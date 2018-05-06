@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from pyface.tasks.action.schema import SToolBar
 from pyface.tasks.task_layout import TaskLayout, PaneItem
 from traits.api import Instance
@@ -24,7 +25,7 @@ from pychron.envisage.tasks.pane_helpers import ConsolePane
 from pychron.envisage.tasks.wait_pane import WaitPane
 from pychron.extraction_line.tasks.extraction_line_actions import SampleLoadingAction, AutoReloadAction
 from pychron.extraction_line.tasks.extraction_line_pane import CanvasPane, GaugePane, \
-    ExplanationPane
+    ExplanationPane, CryoPane
 from pychron.envisage.tasks.base_task import BaseHardwareTask
 
 
@@ -63,6 +64,7 @@ class ExtractionLineTask(BaseHardwareTask):
     def create_dock_panes(self):
         self.wait_pane = WaitPane(model=self.manager.wait_group)
         panes = [GaugePane(model=self.manager),
+                 CryoPane(model=self.manager),
                  ExplanationPane(model=self.manager),
                  ConsolePane(model=self.manager),
                  self.wait_pane

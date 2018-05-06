@@ -31,7 +31,7 @@ from pychron.hardware.core.i_core_device import ICoreDevice
 from pychron.lasers.laser_managers.ilaser_manager import ILaserManager
 from pychron.pychron_constants import EXTRACTION_COLOR, LINE_STR, NULL_STR
 from pychron.pyscripts.pyscript import verbose_skip, makeRegistry, calculate_duration
-from pychron.pyscripts.valve_pyscript import ValvePyScript
+from pychron.pyscripts.valve_pyscript import ValvePyScript, ELPROTOCOL
 
 COMPRE = re.compile(r'[A-Za-z]*')
 
@@ -53,6 +53,29 @@ class RecordingCTX(object):
         self._script.stop_video_recording()
 
 
+class LightingCTX(object):
+    def __init__(self, script, value):
+        self._script = script
+        self._value = value
+
+    def __enter__(self, *args, **kw):
+        self._script.set_light(self._value)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._script.set_light(0)
+
+
+class GrainPolygonCTX(object):
+    def __init__(self, script):
+        self._script = script
+
+    def __enter__(self, *args, **kw):
+        self._script.start_grain_polygon()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._script.stop_grain_polygon()
+
+
 class ExtractionPyScript(ValvePyScript):
     """
     The ExtractionPyScript is used to program the extraction and gettering of
@@ -66,6 +89,10 @@ class ExtractionPyScript(ValvePyScript):
     videos = List
 
     _extraction_positions = List
+    _grain_polygons = List
+
+    def set_load_identifier(self, v):
+        self.setup_context(load_identifier=v)
 
     def set_run_identifier(self, v):
         self.setup_context(run_identifier=v)
@@ -86,6 +113,14 @@ class ExtractionPyScript(ValvePyScript):
             self._extraction_positions = []
 
         return ret
+
+    def get_grain_polygons(self):
+        m = self._grain_polygons
+        if not m:
+            m = self._extraction_action([('get_grain_polygon_blob', (), {})])
+            if m:
+                m = m[0]
+        return m
 
     def get_response_blob(self):
         """
@@ -156,17 +191,18 @@ class ExtractionPyScript(ValvePyScript):
 
     def get_command_register(self):
         cm = super(ExtractionPyScript, self).get_command_register()
-        return command_register.commands.items() + cm
+        return list(command_register.commands.items()) + cm
 
-    def set_default_context(self):
+    def set_default_context(self, **kw):
         """
         provide default values for all the properties exposed in the script
         """
+        for attr in ('analysis_type', 'extract_device'):
+            if attr not in kw:
+                kw[attr] = ''
 
-        self.setup_context(analysis_type='',
-                           position='',
+        self.setup_context(position='',
                            pattern='',
-                           extract_device='',
                            extract_value=0,
                            extract_units='',
                            tray='',
@@ -175,11 +211,30 @@ class ExtractionPyScript(ValvePyScript):
                            duration=0,
                            cleanup=0,
                            beam_diameter=None,
-                           run_identifier='default_runid')
+                           load_identifier='default_load',
+                           run_identifier='default_runid', **kw)
 
     # ==========================================================================
     # commands
     # ==========================================================================
+    @verbose_skip
+    @command_register
+    def get_pressure(self, controller, gauge):
+        result = self._extraction_action([('get_pressure', (controller, gauge))])
+        return result
+
+    @verbose_skip
+    @command_register
+    def set_cryo(self, value):
+        result = self._manager_action([('set_cryo', (value, ), {})], protocol=ELPROTOCOL)
+        return result
+
+    @verbose_skip
+    @command_register
+    def get_cryo_temp(self, value):
+        result = self._manager_action([('get_cryo_temp', (value,), {})], protocol=ELPROTOCOL)
+        return result
+
     @calculate_duration
     @command_register
     def begin_heating_interval(self, duration, min_rise_rate=None,
@@ -302,7 +357,9 @@ class ExtractionPyScript(ValvePyScript):
                 check_period=1, timeout=0):
         """
 
-        tuple format: (device_name, function_name, comparison)
+        tuple format: (device_name, function_name, comparison, ...)
+        addition tuple elements are passed to function_name
+
         comparison ::
 
           x<10
@@ -371,10 +428,10 @@ class ExtractionPyScript(ValvePyScript):
     def power_map(self, cx, cy, padding, bd, power):
         pass
 
-    @verbose_skip
-    @command_register
-    def degas(self, lumens=0, duration=0):
-        self._extraction_action([('do_machine_vision_degas', (lumens, duration), {})])
+    # @verbose_skip
+    # @command_register
+    # def degas(self, lumens=0, duration=0):
+    #     self._extraction_action([('do_machine_vision_degas', (lumens, duration), {})])
 
     @verbose_skip
     @command_register
@@ -401,6 +458,14 @@ class ExtractionPyScript(ValvePyScript):
                                        {'view_snapshot': view_snapshot})])
         if ps and ps[0]:
             self.snapshots.append(ps[0])
+
+    @command_register
+    def grain_polygon(self):
+        return GrainPolygonCTX(self)
+
+    @command_register
+    def lighting(self, value=75):
+        return LightingCTX(self, value)
 
     @command_register
     def video_recording(self, name='video'):
@@ -459,7 +524,7 @@ class ExtractionPyScript(ValvePyScript):
     @command_register
     def get_value(self, name):
         try:
-            print name, self.get_context()[name]
+            print(name, self.get_context()[name])
             return self.get_context()[name]
         except KeyError:
             self.warning('no name {} in context'.format(name))
@@ -508,13 +573,13 @@ class ExtractionPyScript(ValvePyScript):
 
     @verbose_skip
     @command_register
-    def execute_pattern(self, pattern='', block=True):
+    def execute_pattern(self, pattern='', block=True, duration=None):
         if pattern == '':
             pattern = self.pattern
 
         st = time.time()
         # set block=True to wait for pattern completion
-        self._extraction_action([('execute_pattern', (pattern,), {'block': block})])
+        self._extraction_action([('execute_pattern', (pattern,), {'block': block, 'duration': duration})])
 
         return time.time() - st
 
@@ -551,7 +616,7 @@ class ExtractionPyScript(ValvePyScript):
                                            protocol=IPipetteManager)
 
             return rets[0]
-        except InvalidPipetteError, e:
+        except InvalidPipetteError as e:
             self.cancel(protocol=IPipetteManager)
             e = str(e)
             self.warning(e)
@@ -578,7 +643,7 @@ class ExtractionPyScript(ValvePyScript):
                                            protocol=IPipetteManager)
 
             return rets[0]
-        except (TimeoutError, InvalidPipetteError), e:
+        except (TimeoutError, InvalidPipetteError) as e:
             self.cancel(protocol=IPipetteManager)
             e = str(e)
             self.warning(e)
@@ -611,12 +676,30 @@ class ExtractionPyScript(ValvePyScript):
         msg = '{} ON! {}({})'.format(ed, power, units)
         self._set_extraction_state(msg)
         self.console_info('extract sample to {} ({})'.format(power, units))
-        self._extraction_action([('extract', (power,), {'units': units})])
+        self._extraction_action([('extract', (power,), {'units': units, })])
 
     @verbose_skip
     @command_register
     def end_extract(self):
         self._extraction_action([('end_extract', (), {})])
+
+    @verbose_skip
+    @command_register
+    def acquire_grain_polygon_blob(self):
+        result = self._extraction_action([('acquire_grain_polygon', (), {})])
+        if result:
+            result = result[0]
+            self._grain_polygons.append(result)
+
+    @verbose_skip
+    @command_register
+    def start_grain_polygon(self):
+        self._extraction_action([('start_measure_grain_polygon', (), {})])
+
+    @verbose_skip
+    @command_register
+    def stop_grain_polygon(self):
+        self._extraction_action([('stop_measure_grain_polygon', (), {})])
 
     @verbose_skip
     @command_register
@@ -657,7 +740,6 @@ class ExtractionPyScript(ValvePyScript):
             return
 
         self.console_info('acquire {}'.format(name))
-        self.runner.connect()
 
         r = self.runner.get_resource(name)
 
@@ -681,7 +763,7 @@ class ExtractionPyScript(ValvePyScript):
 
         if not self._cancel:
             self._resource_flag = r
-            r.set()
+            self.runner.acquire(name)
             self.console_info('{} acquired'.format(name))
 
         self._set_extraction_state(False)
@@ -723,10 +805,7 @@ class ExtractionPyScript(ValvePyScript):
             self.debug('+++++++++++++++++++++++ Runner is None')
             return
 
-        r = self.runner.get_resource(name)
-        if r is not None:
-            r.clear()
-        else:
+        if not self.runner.release(name):
             self.console_info('Could not release {}'.format(name))
 
     @verbose_skip
@@ -858,6 +937,10 @@ class ExtractionPyScript(ValvePyScript):
     def run_identifier(self):
         return self._get_property('run_identifier')
 
+    @property
+    def load_identifier(self):
+        return self._get_property('load_identifier')
+
     # ===============================================================================
     # private
     # ===============================================================================
@@ -867,8 +950,8 @@ class ExtractionPyScript(ValvePyScript):
     def _abort_hook(self):
         self.disable()
 
-    def _cancel_hook(self):
-        self.disable()
+    # def _cancel_hook(self):
+    #     self.disable()
 
     def _get_device(self, name):
         app = self._get_application()
@@ -877,7 +960,7 @@ class ExtractionPyScript(ValvePyScript):
         else:
             self.warning('_get_device - No application')
 
-    def _make_waitfor_func(self, name, funcname, comp):
+    def _make_waitfor_func(self, name, funcname, comp, *args):
         dev = self._get_device(name)
         if dev:
             devfunc = getattr(dev, funcname)
@@ -885,8 +968,8 @@ class ExtractionPyScript(ValvePyScript):
             if m:
                 k = m[0]
 
-                def func(*args):
-                    return eval(comp, {k: devfunc()})
+                def func(*a):
+                    return eval(comp, {k: devfunc(*args)})
 
                 return func
             else:
@@ -935,6 +1018,7 @@ class ExtractionPyScript(ValvePyScript):
 
         # stop patterning
         self._stop_pattern(**kw)
+        self.stop_grain_polygon()
 
     def _stop_pattern(self, protocol=None):
         self._extraction_action([('stop_pattern', (), {})], protocol=protocol)

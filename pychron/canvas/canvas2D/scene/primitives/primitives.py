@@ -15,9 +15,10 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 import time
 
-from Image import Image as PImage
+from PIL import Image as PImage
 from chaco.data_range_1d import DataRange1D
 from chaco.default_colormaps import color_map_name_dict
 from kiva.agg.agg import GraphicsContextArray
@@ -315,6 +316,7 @@ class Span(Line):
 class LoadIndicator(Circle):
     degas_indicator = False
     measured_indicator = False
+    monitor_indicator = False
     degas_color = Color('orange')
     measured_color = Color('purple')
     default_color = 'black'
@@ -391,15 +393,28 @@ class LoadIndicator(Circle):
         nr = r * 0.25
 
         super(LoadIndicator, self)._render(gc)
+        if self.monitor_indicator:
+            with gc:
+                gc.set_line_width(1)
+                gc.move_to(x, y - r)
+                gc.line_to(x, y + r)
+                gc.stroke_path()
+
+                gc.move_to(x - r, y)
+                gc.line_to(x + r, y)
+                gc.stroke_path()
+
         if self.degas_indicator:
-            gc.set_fill_color(self._convert_color(self.degas_color))
-            gc.arc(x, y + 2 * nr, nr, 0, 360)
-            gc.fill_path()
+            with gc:
+                gc.set_fill_color(self._convert_color(self.degas_color))
+                gc.arc(x, y + 2 * nr, nr, 0, 360)
+                gc.fill_path()
 
         if self.measured_indicator:
-            gc.set_fill_color(self._convert_color(self.measured_color))
-            gc.arc(x, y - 2 * nr, nr, 0, 360)
-            gc.fill_path()
+            with gc:
+                gc.set_fill_color(self._convert_color(self.measured_color))
+                gc.arc(x, y - 2 * nr, nr, 0, 360)
+                gc.fill_path()
 
         for pm in self.primitives:
             pm.x, pm.y = self.x, self.y

@@ -15,6 +15,8 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import time
 
@@ -26,6 +28,8 @@ from pychron.hardware.meter_calibration import MeterCalibration
 from pychron.lasers.laser_managers.ilaser_manager import ILaserManager
 from pychron.managers.manager import Manager
 from pychron.paths import paths
+from six.moves import map
+from six.moves import zip
 
 
 @provides(ILaserManager)
@@ -37,7 +41,7 @@ class BaseLaserManager(Manager):
 
     enable = Event
     enable_label = Property(depends_on='enabled')
-    enabled_led = Instance('pychron.core.ui.led_editor.LED')
+    # enabled_led = Instance('pychron.core.ui.led_editor.LED', ())
     enabled = Bool(False)
 
     stage_manager = Instance('pychron.lasers.stage_managers.stage_manager.StageManager')
@@ -64,9 +68,9 @@ class BaseLaserManager(Manager):
         else:
             return True, None
 
-    def initialize_video(self):
-        if self.use_video:
-            self.stage_manager.initialize_video()
+    # def initialize_video(self):
+    #     if self.use_video:
+    #         self.stage_manager.initialize_video()
 
     def update_position(self):
         self.debug('update position')
@@ -74,7 +78,7 @@ class BaseLaserManager(Manager):
         self.debug('got position {}'.format(pos))
         if pos:
             if self.stage_manager:
-                self.stage_manager.trait_set(**dict(zip(('_x_position', '_y_position', '_z_position'), pos)))
+                self.stage_manager.trait_set(**dict(list(zip(('_x_position', '_y_position', '_z_position'), pos))))
             return pos
 
     def wake(self):
@@ -126,24 +130,14 @@ class BaseLaserManager(Manager):
         patterns = list_directory(p, extension)
         return ['', ] + patterns
 
-    #     def new_pattern_maker(self):
-    #         pm = PatternMakerView()
-    #         self.open_view(pm)
-    #
-    #     def open_pattern_maker(self):
-    #         pm = PatternMakerView(
-    #                               executor=self.pattern_executor
-    #                               )
-    #         if pm.load_pattern():
-    #             self.open_view(pm)
-
-    def execute_pattern(self, name=None, block=False, lase=False):
-        if not self.stage_manager.temp_hole:
-            self.information_dialog('Need to specify a hole')
-            return
+    def execute_pattern(self, name=None, duration=None, block=False, lase=False, thread_safe=True):
+        # if not self.stage_manager.temp_hole:
+        #     self.information_dialog('Need to specify a hole')
+        #     return
 
         pm = self.pattern_executor
-        self.debug('execute pattern {}, block={}, lase={}'.format(name, block, lase))
+        self.debug('execute pattern {}, duration=duration, block={}, lase={}'.format(name, duration,
+                                                                                     block, lase))
         if pm.load_pattern(name):
             pm.set_stage_values(self.stage_manager)
 
@@ -153,7 +147,7 @@ class BaseLaserManager(Manager):
                     return
                 self.set_laser_power(self.pulse.power, verbose=True)
 
-            pm.execute(block)
+            pm.execute(block, duration, thread_safe=thread_safe)
 
     def get_brightness(self, **kw):
         return 0
@@ -218,7 +212,7 @@ class BaseLaserManager(Manager):
 
         cnt = 0
         tries = 0
-        maxtries = int(500 / float(period))  # timeout after 50 s
+        maxtries = int(5 / float(period))  # timeout after 50 s
         nsuccess = 2
         self._cancel_blocking = False
         if cmpfunc is None:
@@ -238,8 +232,8 @@ class BaseLaserManager(Manager):
                 try:
                     if not cmpfunc(resp):
                         cnt += 1
-                except (ValueError, TypeError), e:
-                    print '_blocking exception {}'.format(e)
+                except (ValueError, TypeError) as e:
+                    print('_blocking exception {}'.format(e))
                     cnt = 0
 
                 if position_callback:
@@ -252,7 +246,7 @@ class BaseLaserManager(Manager):
                             position_callback(*xyz)
             else:
                 cnt = 0
-            tries += 1
+                tries += 1
 
         state = cnt >= nsuccess
         if state:
@@ -286,7 +280,7 @@ class BaseLaserManager(Manager):
         if config.has_section(section):
             cs = config.get(section, 'coefficients')
             try:
-                coeffs = map(float, cs.split(','))
+                coeffs = list(map(float, cs.split(',')))
             except ValueError:
                 self.warning_dialog('Invalid power calibration {}'.format(cs))
                 return
@@ -304,7 +298,7 @@ class BaseLaserManager(Manager):
         if self.enabled:
             s = 'Laser Enabled'
             if self._requested_power:
-                s = 'Laser ON {}({})'.format(self._requested_power, self.units)
+                s = 'Laser ON {}{}'.format(self._requested_power, self.units)
 
         return s
 
@@ -328,18 +322,18 @@ class BaseLaserManager(Manager):
     # ===============================================================================
     # handlers
     # ===============================================================================
-    def _enabled_changed(self):
-        if self.enabled:
-            self.enabled_led.state = 'green'
-        else:
-            self.enabled_led.state = 'red'
+    # def _enabled_changed(self):
+    #     if self.enabled:
+    #         self.enabled_led.set_state('green')
+    #     else:
+    #         self.enabled_led.set_state('red')
 
     def _use_video_changed(self):
         if not self.use_video:
             try:
                 self.stage_manager.video.close()
-            except AttributeError, e:
-                print 'use video 1', e
+            except AttributeError as e:
+                print('use video 1', e)
 
         try:
             sm = self._stage_manager_factory(self.stage_args)
@@ -353,8 +347,8 @@ class BaseLaserManager(Manager):
             sm.load()
 
             self.stage_manager = sm
-        except AttributeError, e:
-            print 'use video 2', e
+        except AttributeError as e:
+            print('use video 2', e)
 
     def _stage_manager_factory(self, args):
         self.stage_args = args
@@ -371,9 +365,9 @@ class BaseLaserManager(Manager):
         return sm
 
     # defaults
-    def _enabled_led_default(self):
-        from pychron.core.ui.led_editor import LED
-        return LED()
+    # def _enabled_led_default(self):
+    #     from pychron.core.ui.led_editor import LED
+    #     return LED()
 
     def _pattern_executor_default(self):
         from pychron.lasers.pattern.pattern_executor import PatternExecutor

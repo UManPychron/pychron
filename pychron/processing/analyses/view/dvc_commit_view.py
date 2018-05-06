@@ -15,12 +15,13 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
-import json
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 
 from git import Repo
 from pyface.message_dialog import information
-from traits.api import HasTraits, Str, Int, Bool, List, Event, Either, Float, on_trait_change
+from traits.api import HasTraits, Str, Int, Bool, List, Event, Either, Float, on_trait_change, Property, cached_property
 from traitsui.api import View, UItem, VGroup, TabularEditor, HGroup, Item
 from traitsui.tabular_adapter import TabularAdapter
 
@@ -31,9 +32,10 @@ from pychron.dvc.tasks.panes import CommitAdapter
 from pychron.envisage.icon_button_editor import icon_button_editor
 from pychron.envisage.view_util import open_view
 from pychron.git_archive.repo_manager import isoformat_date
-from pychron.git_archive.utils import get_commits, get_diff, get_head_commit
+from pychron.git_archive.utils import get_commits, get_diff, get_head_commit, get_log, from_gitlog
 from pychron.paths import paths
 from pychron.pychron_constants import LIGHT_RED, PLUSMINUS_ONE_SIGMA, LIGHT_YELLOW
+from pychron import json
 
 TAGS = 'TAG', 'BLANK', 'ISOEVO', 'ICFactor'
 TAG_COLORS = {'TAG': '#f5f7c8', 'BLANKS': '#cac8f7',
@@ -217,7 +219,7 @@ class DiffView(BaseDiffView):
                          for t, k in ((name, 'value'), (PLUSMINUS_ONE_SIGMA, 'error'), ('Fit', 'fit'))]
 
     def set_blanks(self, aj, bj):
-        keys = aj.keys()
+        keys = list(aj.keys())
         self.oblanks = [DiffValue(t, aj[name][k], bj[name][k])
                         for name in aj.keys() if name != 'reviewed'
                         for t, k in ((name, 'value'), (PLUSMINUS_ONE_SIGMA, 'error'), ('Fit', 'fit'))]
@@ -228,8 +230,8 @@ class DiffView(BaseDiffView):
                            for t, k in ((name, 'value'), (PLUSMINUS_ONE_SIGMA, 'error'), ('Fit', 'fit'))]
 
     def set_tags(self, aj, bj):
-        print 'a', aj
-        print 'b', bj
+        print('a', aj)
+        print('b', bj)
         self.otags = [DiffValue(name, aj[name], bj[name]) for name in ('name',)]
 
     def traits_view(self):
@@ -286,8 +288,6 @@ class DVCCommitView(HasTraits):
         self.repo = Repo(os.path.join(paths.repository_dataset_dir, an.repository_identifier))
         self.record_id = an.record_id
         self.repository_identifier = an.repository_identifier
-
-        self.initialize(an)
 
     def initialize(self, an):
         pass
@@ -365,7 +365,7 @@ class DVCCommitView(HasTraits):
             rhsdate = rhs.date.isoformat()
 
             diffs = []
-            for a in ('blanks', 'icfactors', 'tags', 'intercepts'):
+            for a in ('blanks', 'icfactors', 'intercepts'):
                 p = analysis_path(self.record_id, self.repository_identifier, modifier=a)
                 dd = get_diff(self.repo, lhs.hexsha, rhs.hexsha, p)
                 if dd:
@@ -375,8 +375,10 @@ class DVCCommitView(HasTraits):
                 v = DiffView(self.record_id, lhsid, rhsid, lhsdate, rhsdate)
                 for a, (aa, bb) in diffs:
                     func = getattr(v, 'set_{}'.format(a))
-                    func(json.load(aa.data_stream),
-                         json.load(bb.data_stream))
+
+                    a = aa.data_stream.read().decode('utf-8')
+                    b = bb.data_stream.read().decode('utf-8')
+                    func(json.loads(a), json.loads(b))
                 v.finish()
                 open_view(v)
             else:
@@ -393,29 +395,35 @@ class DVCCommitView(HasTraits):
 
 
 class HistoryView(DVCCommitView):
-    def initialize(self, an):
-        repo = self.repo
-        cs = []
-        for a, b in (('TAG', 'tag'),
-                     ('ISOEVO', 'intercepts'),
-                     ('ISOEVO', 'baselines'),
-                     ('BLANKS', 'blanks'),
-                     ('ICFactor', 'icfactors'),
-                     ('IMPORT', ''),
-                     ('MANUAL', ''),
-                     ('COLLECTION', '')):
-            path = an.make_path(b)
-            if path:
-                args = [repo, repo.active_branch.name, path, a]
-                if a:
-                    args.append('--grep=^<{}>'.format(a))
+    name = 'History'
 
-                css = get_commits(*args)
-                for ci in css:
-                    ci.path = path
-                cs.extend(css)
+    def initialize(self, an, force=False):
+        if not self.commits or force:
+            repo = self.repo
+            cs = []
+            hexshas = []
+            for a, b in (('TAG', 'tag'),
+                         ('ISOEVO', 'intercepts'),
+                         ('ISOEVO', 'baselines'),
+                         ('BLANKS', 'blanks'),
+                         ('ICFactor', 'icfactors')):
+                path = an.make_path(b)
+                if path:
+                    css = get_commits(repo, repo.active_branch.name, path, a, '--grep=^<{}>'.format(a))
+                    for ci in css:
+                        if ci.hexsha not in hexshas:
+                            ci.path = path
+                            hexshas.append(ci.hexsha)
+                            cs.append(ci)
 
-        self.commits = sorted(cs, key=lambda x: x.date, reverse=True)
+                            # css = [c for c]
+                            # cs.extend(css)
+
+            # logtxt = get_log(repo, repo.active_branch.name, path)
+            # if logtxt:
+            #     cs.extend((from_gitlog(l.strip(), path) for l in logtxt.split('\n')))
+
+            self.commits = sorted(cs, key=lambda x: x.date, reverse=True)
 
 # class FitsView(DVCCommitView):
 #     commit_tag = 'ISOEVO'

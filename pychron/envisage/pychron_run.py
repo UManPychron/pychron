@@ -15,6 +15,7 @@
 # ===============================================================================
 # ============= enthought library imports =======================
 
+from __future__ import absolute_import
 import logging
 
 from envisage.core_plugin import CorePlugin
@@ -48,16 +49,22 @@ PACKAGE_DICT = dict(
 
     ClassifierPlugin='pychron.classifier.tasks.plugin',
 
+    # data mappers
+    USGSVSCDataPlugin='pychron.data_mapper.tasks.usgs_vsc.plugin',
+    WiscArDataPlugin='pychron.data_mapper.tasks.wisc_ar.plugin',
+
     # experiment
     EntryPlugin='pychron.entry.tasks.entry_plugin',
     ExperimentPlugin='pychron.experiment.tasks.experiment_plugin',
     PyScriptPlugin='pychron.pyscripts.tasks.pyscript_plugin',
+    SimpleIdentifierPlugin='pychron.entry.tasks.simple_identifier.plugin',
 
     # hardware
     ClientExtractionLinePlugin='pychron.extraction_line.tasks.client_extraction_line_plugin',
     ExternalPipettePlugin='pychron.external_pipette.tasks.external_pipette_plugin',
     ExtractionLinePlugin='pychron.extraction_line.tasks.extraction_line_plugin',
     ChromiumCO2Plugin='pychron.lasers.tasks.plugins.chromium_co2',
+    ChromiumDiodePlugin='pychron.lasers.tasks.plugins.chromium_diode',
     ChromiumUVPlugin='pychron.lasers.tasks.plugins.chromium_uv',
     FusionsDiodePlugin='pychron.lasers.tasks.plugins.diode',
     FusionsCO2Plugin='pychron.lasers.tasks.plugins.co2',
@@ -84,6 +91,7 @@ PACKAGE_DICT = dict(
     # social
     EmailPlugin='pychron.social.email.tasks.plugin',
     GoogleCalendarPlugin='pychron.social.google_calendar.tasks.plugin',
+    TwitterPlugin='pychron.social.twitter.plugin'
     # WorkspacePlugin='pychron.workspace.tasks.workspace_plugin',
 
     # LabBookPlugin='pychron.labbook.tasks.labbook_plugin',
@@ -122,10 +130,10 @@ def get_hardware_plugins():
 
 def get_klass(package, name):
     try:
-        m = __import__(package, globals(), locals(), [name], -1)
+        m = __import__(package, globals(), locals(), [name])
         klass = getattr(m, name)
 
-    except ImportError, e:
+    except ImportError as e:
         import traceback
 
         traceback.print_exc()

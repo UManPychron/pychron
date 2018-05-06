@@ -15,9 +15,10 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 import logging
 import os
-from ConfigParser import ConfigParser
+from six.moves.configparser import ConfigParser
 
 from numpy import append as npappend
 from traits.api import Property, Dict, Str
@@ -27,6 +28,8 @@ from uncertainties import ufloat
 from pychron.core.helpers.isotope_utils import sort_isotopes
 from pychron.paths import paths
 from pychron.processing.isotope import Isotope, Baseline
+import six
+from six.moves import zip
 
 logger = logging.getLogger('ISO')
 
@@ -36,6 +39,30 @@ class IsotopeGroup(HasTraits):
     isotope_keys = Property
     conditional_modifier = None
     name = Str
+
+    def keys(self):
+        return list(self.isotopes.keys())
+
+    def __getitem__(self, item):
+        return self.isotopes[item]
+
+    def iteritems(self):
+        return self.isotopes.items()
+
+    def itervalues(self):
+        return self.isotopes.values()
+
+    def values(self):
+        return list(self.isotopes.values())
+
+    def sorted_values(self):
+        return [self.isotopes[k] for k in self.isotope_keys]
+
+    def items(self):
+        return list(self.isotopes.items())
+
+    def pop(self, key):
+        return self.isotopes.pop(key)
 
     def debug(self, msg, *args, **kw):
         self._log(logger.debug, msg)
@@ -131,7 +158,7 @@ class IsotopeGroup(HasTraits):
         try:
             iso = self.isotopes[attr]
         except KeyError:
-            iso = next((i for i in self.isotopes.itervalues() if i.detector == attr), None)
+            iso = next((i for i in self.itervalues() if i.detector == attr), None)
 
         if iso is not None:
             return iso.get_slope(n)
@@ -140,7 +167,7 @@ class IsotopeGroup(HasTraits):
         try:
             r = self.isotopes[attr].baseline.uvalue
         except KeyError:
-            r = next((iso.baseline.uvalue for iso in self.isotopes.itervalues() if iso.detector == attr), None)
+            r = next((iso.baseline.uvalue for iso in self.itervalues() if iso.detector == attr), None)
         return r
 
     def get_values(self, attr, n):
@@ -166,8 +193,9 @@ class IsotopeGroup(HasTraits):
             return ufloat(0, 0, tag=iso)
 
     def get_intensity(self, iso):
-        if iso in self.isotopes:
-            return self.isotopes[iso].get_intensity()
+        viso = next((i for i in self.itervalues() if i.isotope == iso), None)
+        if viso is not None:
+            return viso.get_intensity()
         else:
             return ufloat(0, 0, tag=iso)
 
@@ -177,14 +205,14 @@ class IsotopeGroup(HasTraits):
 
         p = os.path.join(paths.spectrometer_dir, 'detectors.cfg')
         # factors=None
-        ic = 1, 1e-20
+        ic = 1, 0
         if os.path.isfile(p):
             c = ConfigParser()
             c.read(p)
             det = det.lower()
             for si in c.sections():
                 if si.lower() == det:
-                    v, e = 1, 1e-20
+                    v, e = 1, 0
                     if c.has_option(si, 'ic_factor'):
                         v = c.getfloat(si, 'ic_factor')
                     if c.has_option(si, 'ic_factor_err'):
@@ -226,14 +254,14 @@ class IsotopeGroup(HasTraits):
         if kind == 'baseline':
             ret = False
             # get the isotopes that match detector
-            for i in isotopes.itervalues():
+            for i in self.itervalues():
                 if i.detector == det:
                     _append(i)
                     ret = True
             return ret
 
         else:
-            for i in (iso, '{}{}'.format(iso, det)):
+            for i in ('{}{}'.format(iso, det), iso):
                 if i in isotopes:
                     _append(isotopes[i])
                     return True
@@ -247,22 +275,43 @@ class IsotopeGroup(HasTraits):
             self.set_blank(k, None, (0, 0))
 
     def clear_error_components(self):
-        for iso in self.isotopes.itervalues():
+        for iso in self.itervalues():
             iso.age_error_component = 0
 
     def isotope_factory(self, **kw):
         return Isotope(**kw)
 
-    def set_isotope_detector(self, det, iso=None):
-        name = None
-        if iso:
-            name = iso
+    def pairs(self):
+        return [(k, v.name, v.detector) for k, v in self.isotopes.items()]
 
-        if not isinstance(det, str):
-            name, det = det.isotope, det.name
+    def set_isotope_detector(self, det, add=False):
+        det, name = det.name, det.isotope
+        # print 'setting isotope detector {} {}'.format(name, det)
+        # print self.pairs()
+        # name = None
+        # if iso:
+        #     name = iso
 
+        # if not isinstance(det, str):
+        #     name, det = det.isotope, det.name
+        #
+        # name = '{}{}'.format(det.isotope, det.name)
+
+        # print 'name ={} detector={}'.format(name, det)
         if name in self.isotopes:
-            iso = self.isotopes[name]
+            iso = self.isotopes.pop(name)
+            if add:
+                nn = '{}{}'.format(iso.name, iso.detector)
+                self.isotopes[nn] = iso
+                #
+                # # iso = self.isotopes[name]
+                # # if iso.detector != det:
+                # #     iso.detector = det
+                # #     # self.isotopes[name] = iso
+                # #
+                iso = Isotope(name, det)
+                name = '{}{}'.format(name, det)
+                self.isotopes[name] = iso
         else:
             iso = Isotope(name, det)
             self.isotopes[name] = iso
@@ -278,7 +327,7 @@ class IsotopeGroup(HasTraits):
                 return ufloat(default, 0, tag=iso)
 
     def get_isotopes(self, det):
-        for iso in self.isotopes.itervalues():
+        for iso in self.itervalues():
             if iso.detector == det:
                 yield iso
 
@@ -286,23 +335,30 @@ class IsotopeGroup(HasTraits):
         if name is None and detector is None:
             raise NotImplementedError('name or detector required')
 
+        # print('get istop, name={}  keys={}'.format(name, self.isotopes.keys()))
+        iso = None
         if name:
             try:
                 iso = self.isotopes[name]
-                if kind == 'sniff':
-                    iso = iso.sniff
-                elif kind == 'baseline':
-                    iso = iso.baseline
-                return iso
+                if detector:
+                    if iso.detector != detector:
+                        return
+
             except KeyError:
                 if detector:
                     try:
-                        return self.isotopes['{}{}'.format(name, detector)]
+                        iso = self.isotopes['{}{}'.format(name, detector)]
                     except KeyError:
                         self.isotopes[name] = iso = Isotope(name, detector)
-                        return iso
         else:
-            return next((iso for iso in self.isotopes.itervalues() if iso.detector == detector), None)
+            iso = next((iso for iso in self.itervalues() if iso.detector == detector), None)
+
+        if iso:
+            if kind == 'sniff':
+                iso = iso.sniff
+            elif kind == 'baseline':
+                iso = iso.baseline
+        return iso
 
     def set_isotope(self, iso, det, v, **kw):
         # print 'set isotope', iso, v
@@ -313,33 +369,44 @@ class IsotopeGroup(HasTraits):
             niso = self.isotopes[iso]
 
         niso.set_uvalue(v)
-        for k, v in kw.iteritems():
+        for k, v in six.iteritems(kw):
             setattr(niso, k, v)
         # niso.trait_set(**kw)
 
         return niso
 
-    def set_baseline(self, iso, det, v):
-        if iso not in self.isotopes:
-            niso = Isotope(iso, det)
-            self.isotopes[iso] = niso
-
-        self.isotopes[iso].baseline.set_uvalue(v)
+    def set_baseline(self, iso, detector, v):
+        for iso in ('{}{}'.format(iso, detector), iso):
+            if iso in self.isotopes:
+                self.debug('setting {} baseline {}'.format(iso, v))
+                self.isotopes[iso].baseline.set_uvalue(v)
+                break
+                # else:
+                #     niso = Isotope(iso, detector)
+                #     self.isotopes[iso] = niso
+                #
+                # self.debug('setting {} baseline {}'.format(iso, v))
+                # self.isotopes[iso].baseline.set_uvalue(v)
 
     def set_blank(self, iso, detector, v):
-        if iso not in self.isotopes:
-            niso = Isotope(iso, detector)
-            self.isotopes[iso] = niso
+        for iso in ('{}{}'.format(iso, detector), iso):
+            if iso in self.isotopes:
+                self.debug('setting {} blank {}'.format(iso, v))
+                self.isotopes[iso].blank.set_uvalue(v)
+                break
+                # else:
+                #     niso = Isotope(iso, detector)
+                #     self.isotopes[iso] = niso
 
-        self.debug('setting {} blank {}'.format(iso, v))
-        self.isotopes[iso].blank.set_uvalue(v)
+                # self.debug('setting {} blank {}'.format(iso, v))
+                # self.isotopes[iso].blank.set_uvalue(v)
 
     # private
     def _get_iso_by_detector(self, det):
         return (i for i in self.isotopes if i.detector == det)
 
     def _get_isotope_keys(self):
-        keys = self.isotopes.keys()
+        keys = list(self.isotopes.keys())
         return sort_isotopes(keys)
 
     def __getattr__(self, attr):
@@ -349,7 +416,7 @@ class IsotopeGroup(HasTraits):
             try:
                 return self.get_value(n) / self.get_value(d)
             except (ZeroDivisionError, TypeError):
-                return ufloat(0, 1e-20)
+                return ufloat(0, 0)
         elif attr.startswith('u') or attr in self.isotope_keys:
             return self.get_value(attr)
         else:

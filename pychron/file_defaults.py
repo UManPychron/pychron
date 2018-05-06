@@ -22,6 +22,7 @@ This file defines the text for various default files.
 
 Values are used in pychron.paths when building directory structure
 """
+from __future__ import absolute_import
 import yaml
 
 from pychron.core.helpers.strtools import to_bool
@@ -34,6 +35,7 @@ PIPELINE_TEMPLATES = '''- Isotope Evolutions
 - Spectrum
 - Inverse Isochron
 - Series
+- Regression Series
 - Radial
 - Analysis Table
 - Interpreted Age Table
@@ -49,6 +51,9 @@ PIPELINE_TEMPLATES = '''- Isotope Evolutions
 - Yield
 - CSV Analyses Export
 - CSV Ideogram
+- Correction Factors
+- Monitor Chain
+- Analysis Metadata
 '''
 
 IDENTIFIERS_DEFAULT = """
@@ -241,7 +246,6 @@ DEFAULT_INITIALIZATION = '''<root>
             <plugin enabled="false">Entry</plugin>
             <plugin enabled="false">ArArConstants</plugin>
             <plugin enabled="false">Loading</plugin>
-            <plugin enabled="false">Workspace</plugin>
             <plugin enabled="false">LabBook</plugin>
             <plugin enabled="false">DashboardServer</plugin>
             <plugin enabled="false">DashboardClient</plugin>
@@ -387,201 +391,13 @@ SPECTRUM_SCREEN = make_screen(**spec_d)
 
 radial_d = dict()
 RADIAL_SCREEN = make_screen(**radial_d)
+
+regression_series_d = dict()
+REGRESSION_SERIES_SCREEN = make_screen(**regression_series_d)
 # ===============================================================
 # Pipeline Templates
 # ===============================================================
-RADIAL = """
-required:
-nodes:
-  - klass: UnknownNode
-  - klass: GroupingNode
-  - klass: RadialNode
-"""
-YIELD = """
-required:
-nodes:
-  - klass: UnknownNode
-  - klass: YieldNode
-"""
-GEOCHRON = """
-required:
- - pychron.geochron.geochron_service.GeochronService
-nodes:
- - klass: UnknownNode
- - klass: GeochronNode
-"""
-ICFACTOR = """
-required:
-nodes:
-  - klass: UnknownNode
-  - klass: FindReferencesNode
-    threshold: 10
-    analysis_type: Air
-  - klass: ReferenceNode
-  - klass: FitICFactorNode
-    fits:
-      - numerator: H1
-        denominator: CDD
-        standard_ratio: 295.5
-        analysis_type: Air
-  - klass: ReviewNode
-  - klass: ICFactorPersistNode
-"""
 
-ISOEVO = """
-required:
-nodes:
-  - klass: UnknownNode
-  - klass: FitIsotopeEvolutionNode
-  - klass: ReviewNode
-  - klass: IsotopeEvolutionPersistNode
-    use_editor: False
-"""
-
-BLANKS = """
-required:
-nodes:
-  - klass: UnknownNode
-  - klass: FindReferencesNode
-    threshold: 10
-    analysis_type: Blank Unknown
-  - klass: ReferenceNode
-  - klass: FitBlanksNode
-  - klass: ReviewNode
-  - klass: BlanksPersistNode
-"""
-
-CSV_IDEO = """
-required:
-nodes:
-  - klass: CSVNode
-  - klass: IdeogramNode
-"""
-
-IDEO = """
-required:
-nodes:
-  - klass: UnknownNode
-  - klass: GroupingNode
-  - klass: IdeogramNode
-"""
-
-INVERSE_ISOCHRON = """
-required:
-nodes:
-  - klass: UnknownNode
-  - klass: InverseIsochronNode
-"""
-
-SPEC = """
-required:
-nodes:
-  - klass: UnknownNode
-  - klass: SpectrumNode
-"""
-
-VERTICAL_FLUX = """
-required:
-nodes:
-  - klass: FindVerticalFluxNode
-  - klass: VerticalFluxNode
-"""
-
-XY_SCATTER = """
-required:
-nodes:
-  - klass: UnknownNode
-  - klass: XYScatterNode
-"""
-
-ANALYSIS_TABLE = """
-required:
-nodes:
-  - klass: UnknownNode
-  - klass: GroupingNode
-  - klass: XLSXAnalysisTableNode
-  - klass: XLSXTablePersistNode
-"""
-
-INTERPRETED_AGE_TABLE = """
-required:
-nodes:
-  - klass: InterpretedAgeNode
-  - klass: InterpretedAgeTableNode
-  - klass: ReviewNode
-  - klass: InterpretedAgeTablePersistNode
-"""
-
-INTERPRETED_AGE_IDEOGRAM = """
-required:
-nodes:
-  - klass: InterpretedAgeNode
-  - klass: IdeogramNode
-"""
-
-AUTO_IDEOGRAM = """
-required:
-nodes:
-  - klass: ListenUnknownNode
-  - klass: FilterNode
-    filters:
-     - age<0
-  - klass: GroupingNode
-    key: Identifier
-  - klass: IdeogramNode
-    no_analyses_warning: False
-"""
-REPORT = """
-required:
-nodes:
-  - klass: UnknownNode
-  - klass: ReportNode
-"""
-
-AUTO_REPORT = """
-required:
-nodes:
-  - klass: CalendarUnknownNode 
-  - klass: ReportNode
-  - klass: EmailNode
-"""
-AUTO_SERIES = """
-required:
-nodes:
-  - klass: ListenUnknownNode
-  - klass: SeriesNode
-"""
-
-SERIES = """
-required:
-nodes:
-  - klass: UnknownNode
-  - klass: SeriesNode
-"""
-
-FLUX = """
-required:
-nodes:
-  - klass: FindFluxMonitorsNode
-#  irradiation: NM-274
-#  level: E
-  - klass: FluxMonitorsNode
-#  - klass: GroupingNode
-#  key: Identifier
-#  - klass: IdeogramNode
-#  - klass: TableNode
-#  - klass: ReviewNode
-  - klass: FitFluxNode
-  - klass: ReviewNode
-  - klass: FluxPersistNode
-"""
-
-CSV_ANALYSES_EXPORT = """
-required:
-nodes:
-  - klass: UnknownNode
-  - klass: CSVAnalysesExportNode
-"""
 
 
 REACTORS_DEFAULT = '''{

@@ -16,11 +16,12 @@
 
 # ============= enthought library imports =======================
 from pyface.action.menu_manager import MenuManager
-from traits.api import Int, Property, Str
+from traits.api import Int, Property, Str, Color, Bool
 from traitsui.menu import Action
 from traitsui.tabular_adapter import TabularAdapter
 
 from pychron.core.configurable_tabular_adapter import ConfigurableMixin
+from pychron.core.helpers.color_generators import colornames
 from pychron.core.helpers.formatting import floatfmt
 from pychron.envisage.resources import icon
 from pychron.pychron_constants import PLUSMINUS_ONE_SIGMA
@@ -46,6 +47,10 @@ class ProjectAdapter(BrowserAdapter):
 
 
 class PrincipalInvestigatorAdapter(BrowserAdapter):
+    columns = [('Name', 'name')]
+
+
+class LoadAdapter(BrowserAdapter):
     columns = [('Name', 'name')]
 
 
@@ -117,6 +122,8 @@ REVIEW_STATUS_ICONS = {'Default': icon('gray_ball'),
 class AnalysisAdapter(BrowserAdapter):
     all_columns = [('Review', 'review_status'),
                    ('Run ID', 'record_id'),
+                   ('Sample', 'sample'),
+                   ('Project', 'project'),
                    ('Tag', 'tag'),
                    ('RunDate', 'rundate'),
                    ('Dt', 'delta_time'),
@@ -149,8 +156,15 @@ class AnalysisAdapter(BrowserAdapter):
     odd_bg_color = 'lightgray'
     font = 'arial 10'
 
+    unknown_color = Color
+    blank_color = Color
+    air_color = Color
+    use_analysis_colors = Bool
+
     def run_history_columns(self):
         self.columns = [('Run ID', 'record_id'),
+                        ('Sample', 'sample'),
+                        ('Project', 'project'),
                         ('Tag', 'tag'),
                         ('RunDate', 'rundate'),
                         ('Comment', 'comment'),
@@ -182,7 +196,19 @@ class AnalysisAdapter(BrowserAdapter):
         return '{:0.1f} {}'.format(dt, units)
 
     def get_menu(self, obj, trait, row, column):
-        e = obj.append_replace_enabled
+
+        tag_actions = [Action(name='OK', action='tag_ok'),
+                       Action(name='Omit', action='tag_omit'),
+                       Action(name='Invalid', action='tag_invalid'),
+                       Action(name='Skip', action='tag_skip')]
+
+        group_actions = [Action(name='Group Selected', action='group_selected'),
+                         Action(name='Clear Grouping', action='clear_grouping')]
+
+        select_actions = [Action(name='Same Identifier', action='select_same'),
+                          Action(name='Same Attr', action='select_same_attr'),
+                          Action(name='Clear', action='clear_selection')]
+
         actions = [Action(name='Configure', action='configure_analysis_table'),
                    Action(name='Unselect', action='unselect_analyses'),
                    # Action(name='Replace', action='replace_items', enabled=e),
@@ -190,7 +216,14 @@ class AnalysisAdapter(BrowserAdapter):
                    Action(name='Open', action='recall_items'),
                    Action(name='Review Status Details', action='review_status_details'),
                    Action(name='Load Review Status', action='load_review_status'),
-                   Action(name='Toggle Freeze', action='toggle_freeze')
+                   Action(name='Toggle Freeze', action='toggle_freeze'),
+
+                   MenuManager(name='Selection',
+                               *select_actions),
+                   MenuManager(name='Grouping',
+                               *group_actions),
+                   MenuManager(name='Tag',
+                               *tag_actions)
                    # Action(name='Open Copy', action='recall_copies'),
                    # Action(name='Find References', action='find_refs')
                    ]
@@ -205,8 +238,22 @@ class AnalysisAdapter(BrowserAdapter):
         else:
             if item.delta_time > 1440:  # 24 hours
                 color = '#FAE900'
-            elif row % 2:
-                color = 'lightgray'
+            else:
+                if row % 2:
+                    color = 'lightgray'
+                if item.group_id >= 1:
+                    gid = item.group_id % len(colornames)
+                    color = colornames[gid]
+
+                else:
+                    if self.use_analysis_colors:
+                        if item.analysis_type == 'unknown':
+                            color = self.unknown_color
+                        elif item.analysis_type == 'air':
+                            color = self.air_color
+                        elif item.analysis_type.startswith('blank'):
+                            color = self.blank_color
+
         return color
 
 
@@ -231,7 +278,7 @@ class InterpretedAgeAdapter(TabularAdapter):
         return floatfmt(self.item.age_err, 3)
 
     def get_menu(self, obj, trait, row, column):
-        actions = [Action(name='Delete', action='delete'),]
+        actions = [Action(name='Delete', action='delete'), ]
 
         return MenuManager(*actions)
 

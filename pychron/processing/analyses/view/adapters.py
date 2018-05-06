@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from pyface.action.menu_manager import MenuManager
 from traits.trait_types import Int, Str
 from traits.traits import Property
@@ -29,9 +30,9 @@ from pychron.core.helpers.formatting import format_percent_error
 SIGMA_1 = u'\u00b11\u03c3'
 TABLE_FONT = 'arial 11'
 
-vwidth = Int(70)
-ewidth = Int(60)
-eewidth = Int(70)
+vwidth = Int(80)
+ewidth = Int(70)
+eewidth = Int(80)
 pwidth = Int(50)
 
 
@@ -58,6 +59,7 @@ class DetectorRatioTabularAdapter(BaseTabularAdapter):
     columns = [('Name', 'name'),
                ('Value', 'value'),
                (SIGMA_1, 'error'),
+               ('%', 'perror'),
                ('Calc. IC', 'calc_ic'),
                ('ICFactor', 'ic_factor'),
                ('Ref. Ratio', 'ref_ratio'),
@@ -72,6 +74,13 @@ class DetectorRatioTabularAdapter(BaseTabularAdapter):
     ref_ratio_text = Property
     noncorrected_value_text = Property
     noncorrected_error_text = Property
+    perror_text = Property
+
+    def _get_perror_text(self):
+        try:
+            return floatfmt(float(self.item.error) / float(self.item.value) * 100)
+        except ZeroDivisionError:
+            return 'nan'
 
     def _get_value_text(self):
         return floatfmt(self.item.value)
@@ -212,7 +221,7 @@ class IntermediateTabularAdapter(BaseTabularAdapter, ConfigurableMixin):
     # disc_corrected_error_width = Int(60)
     # disc_corrected_percent_error_width = Int(60)
 
-    name_width = Int(40)
+    name_width = Int(50)
     intercept_width = vwidth
     intercept_error_width = eewidth
     intercept_percent_error_width = pwidth
@@ -316,6 +325,7 @@ class IsotopeTabularAdapter(BaseTabularAdapter, ConfigurableMixin):
     all_columns = [('Iso.', 'name'),
                    ('Det.', 'detector'),
                    ('Fit', 'fit_abbreviation'),
+                   ('Error', 'error_type'),
                    ('Int.', 'value'),
                    (SIGMA_1, 'error'),
                    ('%', 'value_percent_error'),
@@ -335,6 +345,7 @@ class IsotopeTabularAdapter(BaseTabularAdapter, ConfigurableMixin):
     columns = [('Iso.', 'name'),
                ('Det.', 'detector'),
                ('Fit', 'fit_abbreviation'),
+               ('Error', 'error_type'),
                ('Int.', 'value'),
                (SIGMA_1, 'error'),
                ('%', 'value_percent_error'),
@@ -366,11 +377,12 @@ class IsotopeTabularAdapter(BaseTabularAdapter, ConfigurableMixin):
     baseline_percent_error_text = Property
     age_error_component_text = Property
 
-    name_width = Int(40)
+    name_width = Int(50)
     fit_abbreviation_width = Int(40)
+    error_type_width = Int(60)
     include_baseline_error_width = Int(40)
-    baseline_fit_abbreviation_width = Int(40)
-    detector_width = Int(40)
+    baseline_fit_abbreviation_width = Int(60)
+    detector_width = Int(60)
 
     value_width = vwidth
     error_width = ewidth
@@ -384,7 +396,8 @@ class IsotopeTabularAdapter(BaseTabularAdapter, ConfigurableMixin):
     blank_percent_error_width = pwidth
     baseline_percent_error_width = pwidth
 
-    ic_factor_width = Int(50)
+    ic_factor_width = Int(60)
+    ic_factor_error_width = Int(70)
     discrimination_width = Int(50)
 
     def get_menu(self, obj, trait, row, column):

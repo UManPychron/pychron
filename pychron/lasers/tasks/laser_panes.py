@@ -15,16 +15,17 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from enable.component_editor import ComponentEditor
 from pyface.tasks.traits_dock_pane import TraitsDockPane
 from pyface.tasks.traits_task_pane import TraitsTaskPane
 from traits.api import Property
 from traitsui.api import View, UItem, Group, InstanceEditor, HGroup, \
     EnumEditor, Item, spring, Spring, ButtonEditor, VGroup, RangeEditor, \
-    ListStrEditor
+    ListStrEditor, Handler
 
 from pychron.core.ui.custom_label_editor import CustomLabel
-# from pychron.core.ui.laser_status_editor import LaserStatusEditor
+from pychron.core.ui.image_editor import ImageEditor
 from pychron.core.ui.led_editor import LEDEditor
 from pychron.envisage.icon_button_editor import icon_button_editor
 from pychron.experiment.utilities.identifier import pretty_extract_device
@@ -36,18 +37,7 @@ class BaseLaserPane(TraitsTaskPane):
 
     def traits_view(self):
         editor = self.model.stage_manager.canvas_editor_factory()
-        canvas_grp = VGroup(
-            HGroup(UItem('stage_map_name',
-                         editor=EnumEditor(name='stage_map_names')),
-                   Item('stage_map',
-                        show_label=False),
-                   Item('back_button',
-                        enabled_when='linear_move_history',
-                        show_label=False),
-                   spring),
-            UItem('canvas', style='custom', editor=editor))
-
-        return View(canvas_grp)
+        return View(UItem('canvas', style='custom', editor=editor))
 
 
 class AxesPane(TraitsDockPane):
@@ -64,6 +54,7 @@ class StageControlPane(TraitsDockPane):
     def trait_context(self):
         return {'canvas': self.model.stage_manager.canvas,
                 'stage_manager': self.model.stage_manager,
+                'degasser': self.model.degasser,
                 'tray_calibration': self.model.stage_manager.tray_calibration_manager,
                 'object': self.model}
 
@@ -71,8 +62,9 @@ class StageControlPane(TraitsDockPane):
         canvas_grp = VGroup(Item('canvas.show_bounds_rect', label='Show Bounds Rectangle'),
                             Item('canvas.show_grids', label='Show Grids'),
                             VGroup(HGroup(Item('canvas.show_laser_position', label='Display Current'),
-                                          UItem('canvas.crosshairs_color')),
-                                   Item('canvas.show_hole', label='Display Hole Label'),
+                                          UItem('canvas.crosshairs_color'),
+                                          Item('canvas.crosshairs_line_width', label='Line Wt.')),
+                                   Item('canvas.show_hole_label', label='Display Hole Label'),
                                    HGroup(
                                        Item('canvas.show_desired_position',
                                             label='Show Desired'),
@@ -92,12 +84,24 @@ class StageControlPane(TraitsDockPane):
                      layout='tabbed')
 
         if self.model.stage_manager.__class__.__name__ == 'VideoStageManager':
-            camera_grp = VGroup(visible_when='use_video', label='Camera')
-            mvgrp = VGroup(
-                UItem('stage_manager.autocenter_manager', style='custom'),
-                UItem('stage_manager.zoom_calibration_manager',
-                      style='custom'),
-                label='Machine Vision', show_border=True)
+            degasser_grp = VGroup(HGroup(VGroup(UItem('degas_test_button'),
+                                         show_border=True, label='Testing'),
+                                  VGroup(Item('degasser.threshold'),
+                                         show_border=True, label='Preprocess'),
+                                         icon_button_editor('degasser.edit_pid_button','cog'),
+                                         icon_button_editor('degasser.save_button', 'save'),
+                                         VGroup(Item('degasser.pid.kp'),
+                                                Item('degasser.pid.ki'),
+                                                Item('degasser.pid.kd')),
+                                         show_border=True, label='PID'),
+                                  UItem('degasser.plot_container', style='custom', editor=ComponentEditor()),
+                                  label='Degas', show_border=True)
+
+            mvgrp = VGroup(VGroup(UItem('stage_manager.autocenter_manager.display_image',
+                                        width=240, height=240,
+                                        editor=ImageEditor(refresh='stage_manager.autocenter_manager.'
+                                                                   'display_image.refresh_needed'))),
+                           label='Machine Vision', show_border=True)
 
             recgrp = VGroup(HGroup(icon_button_editor('stage_manager.snapshot_button',
                                                       'camera',
@@ -107,15 +111,23 @@ class StageControlPane(TraitsDockPane):
                                                       tooltip='Record video'),
                                    CustomLabel('stage_manager.record_label',
                                                color='red')),
-                            VGroup(Item('stage_manager.auto_save_snapshot'),
-                                   Item('stage_manager.render_with_markup')),
+                            HGroup(Item('stage_manager.auto_save_snapshot', label='Auto Save'),
+                                   Item('stage_manager.render_with_markup', label='Add Markup')),
                             show_border=True,
                             label='Recording')
 
             cfggrp = VGroup(Item('stage_manager.camera_zoom_coefficients',
-                                 label='Zoom Coefficients'))
-            camera_grp.content.extend((cfggrp, recgrp, mvgrp))
+                                 label='Coeff.'),
+                            icon_button_editor('stage_manager.configure_camera_device_button', 'cog',
+                                               tooltip='Reload camera configuration file'),
+                            show_border=True, label='Zoom')
+            # camera_grp.content.extend((HGroup(cfggrp, recgrp), mvgrp))
+
+            camera_grp = VGroup(HGroup(cfggrp, recgrp),
+                                mvgrp,
+                                visible_when='use_video', label='Camera')
             tabs.content.append(camera_grp)
+            tabs.content.append(degasser_grp)
 
         mode = self.model.mode
         if mode != 'client':
@@ -148,6 +160,8 @@ class StageControlPane(TraitsDockPane):
                                      editor=ListStrEditor()))
             cal_grp = HGroup(UItem('tray_calibration.style',
                                    enabled_when='not tray_calibration.isCalibrating()'),
+                             UItem('stage_manager.stage_map_name',
+                                   editor=EnumEditor(name='stage_manager.stage_map_names')),
                              UItem('tray_calibration.calibrate',
                                    enabled_when='tray_calibration.calibration_enabled',
                                    editor=ButtonEditor(label_value='tray_calibration.calibration_step'),
@@ -156,7 +170,7 @@ class StageControlPane(TraitsDockPane):
                                    enabled_when='tray_calibration.isCalibrating()'),
                              UItem('tray_calibration.set_center_button'))
             tc_grp = VGroup(cal_grp,
-                            holes_grp,
+                            # holes_grp,
                             HGroup(cal_results_grp, cal_help_grp),
                             label='Calibration')
 
@@ -170,11 +184,6 @@ class StageControlPane(TraitsDockPane):
                       icon_button_editor('stage_manager.autocenter_button', 'find',
                                          tooltip='Do an autocenter at the current location',
                                          enabled_when='stage_manager.autocenter_manager.use_autocenter'),
-                      Item('stage_manager.keep_images_open',
-                           enabled_when='stage_manager.autocenter_manager.use_autocenter',
-                           label='Keep Images Open',
-                           tooltip='If checked  do not automatically close '
-                                   'autocentering images when move finished'),
                       label='Calibrated Position',
                       show_border=True)
         hgrp = HGroup(UItem('stage_manager.stop_button'),
@@ -184,7 +193,6 @@ class StageControlPane(TraitsDockPane):
                                 name='stage_manager.home_options')))
         tabs = self._get_tabs()
         v = View(VGroup(hgrp, pgrp, tabs))
-        # v = View(VGroup(hgrp, pgrp))
         return v
 
 
@@ -196,8 +204,8 @@ class ControlPane(TraitsDockPane):
     floatable = False
 
     def traits_view(self):
-        led_grp = HGroup(UItem('enabled_led',
-                               editor=LEDEditor(),
+        led_grp = HGroup(UItem('enabled',
+                               editor=LEDEditor(colors=['red', 'green']),
                                style='custom',
                                height=-35),
                          UItem('enable', editor=ButtonEditor(label_value='enable_label')))
@@ -231,12 +239,45 @@ class SupplementalPane(TraitsDockPane):
 # ===============================================================================
 # generic
 # ===============================================================================
+
+class PulseHandler(Handler):
+    def close(self, info, ok):
+        info.object.dump_pulse()
+        return ok
+
+
 class PulsePane(TraitsDockPane):
     id = 'pychron.lasers.pulse'
     name = 'Pulse'
 
+    def trait_context(self):
+        ctx = super(PulsePane, self).trait_context()
+        ctx['object'] = self.model.pulse
+        return ctx
+
     def traits_view(self):
-        v = View(Group(UItem('pulse', style='custom'), show_border=True))
+        agrp = VGroup(HGroup(Item('power', tooltip='Hit Enter for change to take effect'),
+                             Item('units', style='readonly', show_label=False),
+                             spring,
+                             Item('duration', label='Duration (s)', tooltip='Set the laser pulse duration in seconds'),
+                             Item('pulse_button',
+                                  editor=ButtonEditor(label_value='pulse_label'),
+                                  show_label=False,
+                                  enabled_when='enabled')))
+        mgrp = VGroup(HGroup(Spring(width=-5, springy=False),
+                             Item('object.wait_control.high', label='Set Max. Seconds'),
+                             spring, UItem('object.wait_control.continue_button')),
+                      HGroup(Spring(width=-5, springy=False),
+                             Item('object.wait_control.current_time', show_label=False,
+                                  editor=RangeEditor(mode='slider',
+                                                     low=1,
+                                                     # low_name='low_name',
+                                                     high_name='object.wait_control.duration')),
+                             CustomLabel('object.wait_control.current_time',
+                                         size=14,
+                                         weight='bold')), show_border=True)
+
+        v = View(VGroup(agrp, mgrp, show_border=True), id='pulse', handler=PulseHandler())
         return v
 
 
@@ -246,7 +287,7 @@ class OpticsPane(TraitsDockPane):
 
     def traits_view(self):
         v = View(Group(UItem('laser_controller',
-                             editor=InstanceEditor(view='control_view'),
+                             editor=InstanceEditor(),
                              style='custom'),
                        show_border=True))
         return v
@@ -290,7 +331,7 @@ class ClientMixin(object):
             # ogrp,
             pos_grp, layout='tabbed')
 
-        egrp = HGroup(UItem('enabled_led', editor=LEDEditor()),
+        egrp = HGroup(UItem('enabled', editor=LEDEditor(colors=['red', 'green'])),
                       UItem('enable',
                             editor=ButtonEditor(label_value='enable_label')),
                       UItem('fire_laser_button', enabled_when='enabled'),
@@ -331,17 +372,4 @@ class AuxilaryGraphPane(TraitsDockPane):
         v = View(UItem('auxilary_graph', editor=ComponentEditor()))
         return v
 
-# from pyface.tasks.enaml_dock_pane import EnamlDockPane
-# import enaml
-# class TestPane(EnamlDockPane):
-#    model = Any
-#    def create_component(self):
-#        with enaml.imports():
-#            from test_view import TestView
-#
-#        view = TestView(model=self.model)
-#        return view
-# FusionsDiodePane = BaseLaserPane
-
-# FusionsDiodeControlPane = ControlPane
 # ============= EOF =============================================

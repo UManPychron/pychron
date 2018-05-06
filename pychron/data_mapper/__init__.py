@@ -19,16 +19,37 @@
 # ============= local library imports  ==========================
 # from pychron.entry.dvc_import.model import DVCImporterModel
 # from pychron.entry.dvc_import.view import DVCImporterView
-from pychron.data_mapper.model import DVCImporterModel
-from pychron.data_mapper.view import DVCImporterView
-from pychron.envisage.view_util import open_view
 
 
+from __future__ import absolute_import
 def do_import_irradiation(dvc, sources, default_source=None):
-    model = DVCImporterModel(dvc=dvc, sources=sources)
+    from pychron.data_mapper.view import DVCIrradiationImporterView, DVCAnalysisImporterView
+    from pychron.data_mapper.model import DVCIrradiationImporterModel, DVCAnalysisImporterModel
+    from pychron.envisage.view_util import open_view
 
-    model.source = next((k for k, v in sources.iteritems() if v == default_source), None)
-    view = DVCImporterView(model=model)
+    model = DVCIrradiationImporterModel(dvc=dvc, sources=sources)
+    # model.source = next((k for k, v in sources.iteritems() if v == default_source), None)
+    view = DVCIrradiationImporterView(model=model)
+    info = open_view(view)
+    return info.result
+
+
+def do_import_analyses(dvc, sources):
+    from pychron.data_mapper.view import DVCIrradiationImporterView, DVCAnalysisImporterView
+    from pychron.data_mapper.model import DVCIrradiationImporterModel, DVCAnalysisImporterModel
+    from pychron.envisage.view_util import open_view
+
+    model = DVCAnalysisImporterModel(dvc=dvc, sources=sources)
+
+    # model.source = next((k for k, v in sources.iteritems() if v == default_source), None)
+    # model.source = sources.keys()[0]
+
+    model.repository_identifier = 'test'
+    model.extract_device = 'USGSVSC_Laser'
+    model.mass_spectrometer = 'USGSVSC_Noblesse'
+    model.principal_investigator = 'USGSVSC'
+
+    view = DVCAnalysisImporterView(model=model)
     info = open_view(view)
     return info.result
 

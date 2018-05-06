@@ -15,6 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
+from __future__ import absolute_import
 from traits.api import Button, Int, Bool, Float, Property, on_trait_change, List, Enum, Range, Color
 from traitsui.api import View, Item
 
@@ -26,11 +27,11 @@ from pychron.pychron_constants import NULL_STR, ERROR_TYPES, SIZES, FONTS
 
 
 class SpectrumAuxPlot(AuxPlot):
-    names = List([NULL_STR,
-                  'Radiogenic 40Ar', 'K/Ca', 'K/Cl', 'Mol K39', 'Age Spectrum'])
-    _plot_names = List(['',
+    names = List([NULL_STR, 'Extract Value',
+                  'Radiogenic 40Ar', 'K/Ca', 'K/Cl', 'Mol Ar40', 'Mol Ar36', 'Mol K39', 'Age Spectrum'])
+    _plot_names = List(['', 'extract_value',
                         'radiogenic_yield',
-                        'kca', 'kcl', 'moles_k39', 'age_spectrum'])
+                        'kca', 'kcl', 'moles_ar40', 'moles_ar36', 'moles_k39', 'age_spectrum'])
 
 
 class SpectrumOptions(AgeOptions):

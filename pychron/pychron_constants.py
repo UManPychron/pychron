@@ -17,6 +17,8 @@
 # ============= enthought library imports =======================
 # ============= standard library imports ========================
 # ============= local library imports  ==========================
+from kiva import pdfmetrics
+
 SPECTROMETER_PROTOCOL = 'pychron.spectrometer.base_spectrometer_manager.BaseSpectrometerManager'
 ION_OPTICS_PROTOCOL = 'pychron.spectrometer.ion_optics_manager.IonOpticsManager'
 SCAN_PROTOCOL = 'pychron.spectrometer.scan_manager.ScanManager'
@@ -24,24 +26,31 @@ EL_PROTOCOL = 'pychron.extraction_line.extraction_line_manager.ExtractionLineMan
 DVC_PROTOCOL = 'pychron.dvc.dvc.DVC'
 FURNACE_PROTOCOL = 'pychron.furnace.furnace_manager.BaseFurnaceManager'
 
-FONTS = ['Helvetica', 'Arial', 'Courier', 'Menlo', 'Consolas']  # 'Courier','Times-Roman']#['modern', 'arial']
+# FONTS = ['Andale Mono', 'Arial',
+#          'Calibri', 'Cambria', 'Consolas', 'Courier New',
+#          'Georgia',
+#          'Impact',
+#          'Helvetica',
+#          'Trebuchet MS',
+#          'Verdana']
+# FONTS = ['Helvetica',
+#          'Arial',
+#          #'Courier New', 'Consolas'
+#          ]
+TTF_FONTS = ['Courier New', 'Arial', 'Georgia', 'Impact', 'Verdana']
+# FONTS = pdfmetrics.standardFonts
+FONTS = ['Helvetica']+TTF_FONTS
 SIZES = [10, 6, 8, 9, 10, 11, 12, 14, 15, 18, 24, 36]
 
-PLUSMINUS = u'\u00b1'
-try:
-    # PLUSMINUS_ERR = PLUSMINUS + 'Err.'
-    PLUSMINUS_ERR = u'{}Err.'.format(PLUSMINUS)
-except UnicodeEncodeError:
-    PLUSMINUS = '+/-'
-    PLUSMINUS_ERR = '{}Err.'.format(PLUSMINUS)
+PLUSMINUS = '\N{Plus-minus sign}'
+SIGMA = '\N{Greek Small Letter Sigma}'
 
-SIGMA = u'\u03c3'
-
-PLUSMINUS_NSIGMA = u'{}{{}}{}'.format(PLUSMINUS, SIGMA)
+PLUSMINUS_NSIGMA = '{}{{}}{}'.format(PLUSMINUS, SIGMA)
 PLUSMINUS_ONE_SIGMA = PLUSMINUS_NSIGMA.format(1)
-# PLUSMINUS_ONE_SIGMA = u'{}1{}'.format(PLUSMINUS, SIGMA)
-PLUSMINUS_PERCENT = u'{}%  '.format(PLUSMINUS)
+PLUSMINUS_TWO_SIGMA = PLUSMINUS_NSIGMA.format(2)
+PLUSMINUS_PERCENT = '{}%  '.format(PLUSMINUS)
 
+SPECIAL_IDENTIFIER = 'Special Identifier'
 NULL_STR = '---'
 LINE_STR = '---------'
 SCRIPT_KEYS = ['measurement', 'post_measurement', 'extraction', 'post_equilibration']
@@ -75,6 +84,7 @@ BASELINE = 'baseline'
 WHIFF = 'whiff'
 
 EXTRACT_DEVICE = 'Extract Device'
+NO_EXTRACT_DEVICE = 'No Extract Device'
 
 import string
 
@@ -154,7 +164,7 @@ QTEGRA_INTEGRATION_TIMES = [0.065536, 0.131072, 0.262144, 0.524288,
 QTEGRA_DEFAULT_INTEGRATION_TIME = 1.048576
 DEFAULT_INTEGRATION_TIME = 1
 
-ISOTOPX_INTEGRATION_TIMES = [1, 2, 3]
+ISOTOPX_INTEGRATION_TIMES = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0]
 ISOTOPX_DEFAULT_INTEGRATION_TIME = 1
 DEFAULT_INTEGRATION_TIME = 1
 
@@ -176,4 +186,9 @@ QTEGRA_SOURCE_KEYS = ('extraction_lens', 'ysymmetry', 'zsymmetry', 'zfocus')
 QTEGRA_SOURCE_NAMES = ('ExtractionLens', 'Y-Symmetry', 'Z-Symmetry', 'Z-Focus')
 
 ANALYSIS_TYPES = ['Unknown', 'Air', 'Cocktail', 'Blank Unknown', 'Blank Air', 'Blank Cocktail', 'Blank']
+
+DEFAULT_MONITOR_NAME = 'FC-2'
+
+ELLIPSE_KINDS = ('1' + SIGMA, '2' + SIGMA, '95%')
+ELLIPSE_KIND_SCALE_FACTORS = dict(zip(ELLIPSE_KINDS, (1, 2, 2.4477)))
 # ============= EOF =============================================
