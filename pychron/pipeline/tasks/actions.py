@@ -15,7 +15,8 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
-from __future__ import absolute_import
+
+
 import os
 
 from pyface.confirmation_dialog import confirm
@@ -148,8 +149,10 @@ class RecallAction(PipelineAction):
     name = 'Recall...'
     action = 'pipeline_recall'
 
-    # def perform(self, event):
-    #     self._get_task(event)
+
+class InterpretedAgeRecallAction(PipelineAction):
+    name = 'Interpreted Age Recall...'
+    action = 'pipeline_interpreted_age_recall'
 
 
 class TimeViewBrowserAction(BrowserAction):
@@ -242,6 +245,24 @@ class IdeogramAction(PlotAction):
     accelerator = 'Ctrl+i'
 
 
+class SubgroupIdeogramAction(PlotAction):
+    name = 'SubGroup Ideogram'
+    action = 'set_subgroup_ideogram_template'
+    image = icon('histogram')
+
+
+class HybridIdeogramAction(PlotAction):
+    name = 'Hybrid Ideogram'
+    action = 'set_hybrid_ideogram_template'
+    image = icon('histogram')
+
+
+class HistoryIdeogramAction(PlotAction):
+    name = 'History Ideogram'
+    action = 'set_history_ideogram_template'
+    image = icon('histogram')
+
+
 class SpectrumAction(PlotAction):
     name = 'Spectrum'
     action = 'set_spectrum_template'
@@ -284,6 +305,12 @@ class ExtractionAction(Action):
                 if task and task.id == tid:
                     getattr(task, 'show_extraction_graph')()
                     break
+
+
+class MassSpecReducedAction(PipelineAction):
+    name = 'Mass Spec Reduced Transfer'
+    dname = 'Mass Spec Reduced Transfer'
+    action = 'mass_spec_reduced_transfer'
 
 
 # ============= Quick Series ====================================
@@ -349,4 +376,9 @@ class SaveFigureAction(TaskAction):
     name = 'Save Figure'
     method = 'save_figure'
 
+
+class SaveTableAction(TaskAction):
+    name = 'Save Table'
+    method = 'save_table'
+    image = icon('table_save')
 # ============= EOF =============================================

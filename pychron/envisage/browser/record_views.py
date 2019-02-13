@@ -17,11 +17,11 @@
 # ============= enthought library imports =======================
 from __future__ import absolute_import
 
+import six
 from sqlalchemy.exc import InternalError
 from traits.api import HasTraits, Str, Date, Long, Bool
 
 from pychron.experiment.utilities.identifier import get_analysis_type
-import six
 
 
 class RecordView(object):
@@ -45,6 +45,7 @@ class InterpretedAgeRecordView(object):
         self.age = obj.get('age')
         self.age_err = obj.get('age_err')
         self.age_kind = obj.get('age_kind')
+        self.age_error_kind = obj.get('age_error_kind')
 
     @property
     def id(self):
@@ -124,6 +125,7 @@ class LabnumberRecordView(RecordView):
     irradiation = ''
     irradiation_level = ''
     irradiation_pos = ''
+    packet = ''
 
     def _create(self, dbrecord):
         self.labnumber = dbrecord.identifier or ''
@@ -132,6 +134,7 @@ class LabnumberRecordView(RecordView):
         # pos = dbrecord.irradiation_position
         if pos:
             self.irradiation_pos = str(pos.position)
+            self.packet = str(pos.packet)
             level = pos.level
             if level:
                 irrad = level.irradiation

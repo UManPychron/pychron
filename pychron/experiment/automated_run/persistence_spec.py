@@ -15,7 +15,7 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
-from __future__ import absolute_import
+
 from traits.api import HasTraits, Str, Int, Bool, Any, Float, \
     Dict, Instance, List, Date, Time, Long
 
@@ -34,6 +34,7 @@ class PersistenceSpec(HasTraits):
     baseline_fods = Dict
 
     save_as_peak_hop = Bool(False)
+    experiment_type = Str
     experiment_id = Int
     sensitivity_multiplier = Float
     experiment_queue_name = Str
@@ -71,8 +72,8 @@ class PersistenceSpec(HasTraits):
 
     rundate = Date
     runtime = Time
-    load_name = Str
-    load_holder = Str
+    # load_name = Str
+    # load_holder = Str
 
     cdd_ic_factor = Any
 

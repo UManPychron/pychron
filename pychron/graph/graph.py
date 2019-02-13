@@ -17,10 +17,12 @@
 # =============enthought library imports=======================
 from __future__ import absolute_import
 from __future__ import print_function
+
 import csv
 import math
 import os
 
+import six
 from chaco.api import OverlayPlotContainer, \
     VPlotContainer, HPlotContainer, GridPlotContainer, \
     BasePlotContainer, Plot, ArrayPlotData
@@ -37,18 +39,14 @@ from pychron.core.helpers.filetools import add_extension
 from pychron.graph.context_menu_mixin import ContextMenuMixin
 from pychron.graph.offset_plot_label import OffsetPlotLabel
 from .tools.contextual_menu_tool import ContextualMenuTool
-import six
-from six.moves import map
-from six.moves import range
-from six.moves import zip
 
-VALID_FONTS = [
+VALID_FONTS = [ 'Arial', 'Lucida Grande', 'Geneva', 'Courier']
     # 'Helvetica',
-    'Arial',
-    'Lucida Grande',
-    # 'Times New Roman',
-    'Geneva',
-    'Courier']
+    # 'Times New Roman'
+
+CONTAINERS = {'v': VPlotContainer, 'h': HPlotContainer, 'g': GridPlotContainer, 'o': OverlayPlotContainer}
+IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.tiff', '.tif', '.gif']
+DEFAULT_IMAGE_EXT = IMAGE_EXTENSIONS[0]
 
 
 def name_generator(base):
@@ -59,24 +57,10 @@ def name_generator(base):
         i += 1
 
 
-IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.tiff', '.tif', '.gif']
-DEFAULT_IMAGE_EXT = IMAGE_EXTENSIONS[0]
-
-
 def fmt(data):
     return ['%0.8f' % d for d in data]
 
 
-# class Graph(Viewable, ContextMenuMixin):
-# class GraphHandler(Handler):
-# def init(self, info):
-# info.object.ui = info.ui
-#
-#    def closed(self, info, isok):
-#        info.object.closed()
-
-
-# class Graph(Viewable, ContextMenuMixin):
 def get_file_path(action='save as', **kw):
     from pyface.api import FileDialog, OK
 
@@ -88,7 +72,6 @@ def get_file_path(action='save as', **kw):
 def add_aux_axis(po, p, title='', color='black'):
     """
     """
-    #        from chaco.axis import PlotAxis
     from chaco.axis import PlotAxis
 
     axis = PlotAxis(p, orientation='right',
@@ -100,7 +83,6 @@ def add_aux_axis(po, p, title='', color='black'):
 
     p.underlays.append(axis)
     po.add(p)
-    #        po.plots['aux'] = [p]
 
     po.x_grid.visible = False
     po.y_grid.visible = False
@@ -134,9 +116,7 @@ def plot_axis_factory(p, key, normal, **kw):
 def plot_factory(legend_kw=None, **kw):
     """
     """
-    p = Plot(data=ArrayPlotData(),
-             # use_backbuffer=True,
-             **kw)
+    p = Plot(data=ArrayPlotData(), **kw)
 
     vis = kw['show_legend'] if 'show_legend' in kw else False
 
@@ -154,9 +134,6 @@ def plot_factory(legend_kw=None, **kw):
     return p
 
 
-CONTAINERS = {'v': VPlotContainer, 'h': HPlotContainer, 'g': GridPlotContainer, 'o': OverlayPlotContainer}
-
-
 def container_factory(**kw):
     """
     """
@@ -165,31 +142,14 @@ def container_factory(**kw):
     else:
         kind = 'v'
 
-    # kinds = ['v', 'h', 'g', 'o']
-    # containers = [VPlotContainer, HPlotContainer, GridPlotContainer, OverlayPlotContainer]
+    cklass = CONTAINERS.get(kind, VPlotContainer)
 
-    # c = containers[kinds.index(kind)]
-    c = CONTAINERS.get(kind, VPlotContainer)
-
-    options = dict(
-        bgcolor='white',
-        padding=5,
-        fill_padding=True)
+    options = dict(bgcolor='white', padding=5, fill_padding=True)
 
     for k in options:
         if k not in list(kw.keys()):
             kw[k] = options[k]
-
-    container = c(**kw)
-
-    # add some tools
-    #        cm=ContextualMenuTool(parent=container,
-    #                              component=container
-    #                              )
-    #        container.tools.append(cm)
-    #
-    # gt = TraitsTool(component = container)
-    # container.tools.append(gt)
+    container = cklass(**kw)
     return container
 
 
@@ -1018,7 +978,7 @@ class Graph(ContextMenuMixin):
 
         if update_y_limits:
             if isinstance(ypadding, str):
-                ypad = max(0.1, abs(mi - ma)) * float(ypadding)
+                ypad = abs(ma-mi)*float(ypadding)
             else:
                 ypad = ypadding
             mi -= ypad
@@ -1070,24 +1030,6 @@ class Graph(ContextMenuMixin):
                                      value=value,
                                      color=color)
         plot.overlays.append(guide_overlay)
-
-    def _add_rule(self, v, orientation, plotid=0, add_move_tool=False, **kw):
-        if v is None:
-            return
-
-        if 'plot' in kw:
-            plot = kw['plot']
-        else:
-            plot = self.plots[plotid]
-
-        from pychron.graph.guide_overlay import GuideOverlay, GuideOverlayMoveTool
-        l = GuideOverlay(plot, value=v, orientation=orientation, **kw)
-        plot.underlays.append(l)
-
-        if add_move_tool:
-            plot.tools.append(GuideOverlayMoveTool(overlay=l))
-
-        return l
 
     def add_vertical_rule(self, v, **kw):
         return self._add_rule(v, 'v', **kw)
@@ -1166,29 +1108,31 @@ class Graph(ContextMenuMixin):
 
         return nc
 
-    def container_factory(self):
+    def container_factory(self, **kw):
         """
         """
+        self.container_dict.update(kw)
+
         return container_factory(**self.container_dict)
 
-    # def _add_line_inspector(self, plot, axis='x', color='red'):
-    #     """
-    #     """
-    #     from chaco.tools.line_inspector import LineInspector
-    #     plot.overlays.append(LineInspector(component=plot,
-    #                                        axis='index_%s' % axis,
-    #                                        write_metadata=self.line_inspectors_write_metadata,
-    #                                        inspect_mode='indexed',
-    #                                        is_listener=False,
-    #                                        color=color))
+    # private
+    def _add_rule(self, v, orientation, plotid=0, add_move_tool=False, **kw):
+        if v is None:
+            return
 
-    # def _crosshairs_factory(self, plot=None, color='black'):
-    #     """
-    #     """
-    #     if plot is None:
-    #         plot = self.plots[0].plots['plot0'][0]
-    #     self._add_line_inspector(plot, axis='x', color=color)
-    #     self._add_line_inspector(plot, axis='y', color=color)
+        if 'plot' in kw:
+            plot = kw['plot']
+        else:
+            plot = self.plots[plotid]
+
+        from pychron.graph.guide_overlay import GuideOverlay, GuideOverlayMoveTool
+        l = GuideOverlay(plot, value=v, orientation=orientation, **kw)
+        plot.underlays.append(l)
+
+        if add_move_tool:
+            plot.tools.append(GuideOverlayMoveTool(overlay=l))
+
+        return l
 
     def _export_data(self, path, plotid):
         # names = []
@@ -1200,7 +1144,7 @@ class Graph(ContextMenuMixin):
             for plot in self.plots:
                 line = plot.y_axis.title
                 write(line)
-                for k, pp in six.iteritems(plot.plots):
+                for k, pp in plot.plots.items():
                     pp = pp[0]
                     a = column_stack((pp.index.get_data(), pp.value.get_data()))
 
@@ -1217,42 +1161,7 @@ class Graph(ContextMenuMixin):
                     write(k)
                     write(header)
                     for row in a:
-                        write(','.join(map('{:0.8f}'.format, row)))
-                        # print 'fff', pp, pp[0].yerror
-                        # data = plot.data
-                        # names.extend(sorted(data.list_data()))
-                        # if a is None:
-                        #     a = array(data.get_data(names[0]))
-                        #
-                        # for ni in names[1:]:
-                        #     d = data.get_data(ni)
-                        #     try:
-                        #         a = column_stack((a, d))
-                        #     except ValueError:
-                        #         a = column_stack((a, zeros_like(a)))
-
-                        # savetxt(path, a, fmt='%.8f', delimiter=',', header=','.join(names))
-
-                        # if plotid is not None:
-                        #     plot = self.plots[plotid]
-                        # else:
-                        #     plot = self.selected_plot
-                        #
-                        # if plot is None:
-                        #     return
-                        #
-                        # data = plot.data
-                        # names = sorted(data.list_data())
-                        #
-                        # a = array(data.get_data(names[0]))
-                        # for ni in names[1:]:
-                        #     d = data.get_data(ni)
-                        #     try:
-                        #         a = column_stack((a, d))
-                        #     except ValueError:
-                        #         a = column_stack((a, zeros_like(a)))
-                        #
-                        # savetxt(path, a, fmt='%.8f', delimiter=',', header=','.join(names))
+                        write(','.join(['{:0.8f}'.format(r) for r in row]))
 
     def _series_factory(self, x, y, yer=None, plotid=0, add=True, **kw):
         """
@@ -1431,11 +1340,15 @@ class Graph(ContextMenuMixin):
 
         axis = getattr(self.plots[plotid], axis)
         params = dict(title=title)
-        if font is not None or size is not None:
-            if font not in VALID_FONTS:
-                font = 'modern'
 
-            tfont = '{} {}'.format(font, size + 2)
+        if font not in VALID_FONTS:
+            font = 'arial'
+
+        if font is not None or size is not None:
+            if size is None:
+                size = 12
+
+            tfont = '{} {}'.format(font, size)
             params.update(title_font=tfont)
 
         axis.trait_set(**params)

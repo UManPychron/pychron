@@ -22,7 +22,7 @@ from traits.api import List, Callable
 from traitsui.menu import Action, Menu as MenuManager
 
 from pychron.graph.tools.point_inspector import PointInspector
-from pychron.pipeline.plot.inspector_item import AnalysisInspectorItem
+# from pychron.pipeline.plot.inspector_item import AnalysisInspectorItem
 from pychron.pychron_constants import PLUSMINUS
 
 
@@ -33,7 +33,6 @@ class AnalysisPointInspector(PointInspector):
     _selected_indices = List
     index_tag = None
     single_point = False
-    inspector_item_klass = AnalysisInspectorItem
 
     def contextual_menu_contents(self):
         """
@@ -44,10 +43,8 @@ class AnalysisPointInspector(PointInspector):
                           on_perform=self._set_tag),
                    Action(name='Set Omit',
                           on_perform=self._set_omit),
-                   Action(name='Set INVALID',
+                   Action(name='Set Invalid',
                           on_perform=self._set_invalid))
-        # menu = MenuManager(name='recall', *actions)
-        # contents = [menu, ]
         return actions
 
     def get_contextual_menu(self):
@@ -99,9 +96,6 @@ class AnalysisPointInspector(PointInspector):
         lines = []
         if self.current_position:
             inds = self.get_selected_index()
-            # convert_index = self.convert_index
-            # index_tag = self.index_tag
-            # index_attr = self.index_attr
 
             if inds is not None:
                 n = len(inds)
@@ -139,22 +133,12 @@ class AnalysisPointInspector(PointInspector):
                             y = self.value_format(y)
 
                     tag = analysis.tag
+                    uuid = analysis.display_uuid
+
                     info = [u'Analysis= {}'.format(rid),
+                            u'UUID= {}'.format(uuid),
                             u'Tag= {}'.format(tag),
                             u'{}= {}'.format(name, y)]
-
-                    # if index_tag:
-                    # if index_attr:
-                    # x = nominal_value(analysis.get_value(index_attr))
-                    #     else:
-                    #         x = xs[ind]
-                    #     print x, index_attr, convert_index
-                    #     if convert_index:
-                    #         x = convert_index(x)
-                    #     else:
-                    #         x = '{:0.5f}'.format(x)
-                    #
-                    #     info.append('{}= {}'.format(index_tag, x))
 
                     if hasattr(analysis, 'status_text'):
                         info.insert(1, 'Status= {}'.format(analysis.status_text))

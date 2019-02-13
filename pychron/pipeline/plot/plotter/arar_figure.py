@@ -14,18 +14,15 @@
 # limitations under the License.
 # ===============================================================================
 
-# ============= enthought library imports =======================
-
-from __future__ import absolute_import
-
 import math
 
+# ============= enthought library imports =======================
 from chaco.array_data_source import ArrayDataSource
 from chaco.tools.broadcaster import BroadcasterTool
 from chaco.tools.data_label_tool import DataLabelTool
 from numpy import Inf, vstack, zeros_like, ma
 from traits.api import HasTraits, Any, Int, Str, Property, \
-    Event, Bool, cached_property, List, Float
+    Event, Bool, cached_property, List, Float, Instance
 from uncertainties import std_dev, nominal_value, ufloat
 
 from pychron.core.filtering import filter_ufloats, sigma_filter
@@ -43,15 +40,9 @@ from pychron.pipeline.plot.flow_label import FlowDataLabel
 from pychron.pipeline.plot.overlays.points_label_overlay import PointsLabelOverlay
 from pychron.processing.analyses.analysis_group import AnalysisGroup
 from pychron.pychron_constants import PLUSMINUS
-import six
-from six.moves import map
 
-
-# PLOT_MAPPING = {'analysis #': 'Analysis Number', 'Analysis #': 'Analysis Number Stacked',
-#                 '%40Ar*': 'Radiogenic 40Ar'}
 
 class SelectionFigure(HasTraits):
-    # _omit_key = None
     graph = Any
 
     def _set_selected(self, ans, sel):
@@ -67,31 +58,6 @@ class SelectionFigure(HasTraits):
         if func:
             func(sel)
 
-        # print 'fff', sel
-        # if sel:
-        #     obj.was_selected = True
-        #
-        #     prev = None
-        #     if hasattr(obj, 'prev_selection'):
-        #         prev = obj.prev_selection
-        #
-        #     if prev != sel:
-        #         self._set_selected(ans, sel)
-        #         if func:
-        #             func(sel)
-        #
-        #     obj.prev_selection = sel
-        #
-        # elif hasattr(obj, 'was_selected'):
-        #     if obj.was_selected:
-        #         self._set_selected(ans, sel)
-        #         if func:
-        #             func(sel)
-        #     obj.was_selected = False
-        #     obj.prev_selection = None
-        # else:
-        #     obj.prev_selection = None
-
         return sel
 
 
@@ -99,19 +65,18 @@ class BaseArArFigure(SelectionFigure):
     inspector_event = Event
     analyses = Any
     sorted_analyses = Property(depends_on='analyses')
-    analysis_group = Property(depends_on='analyses')
+
+    analysis_group = Property(depends_on='analyses, _analysis_group')
+    _analysis_group = Instance(AnalysisGroup)
     _analysis_group_klass = AnalysisGroup
 
     group_id = Int
-    # padding = Tuple((60, 10, 5, 40))
     ytitle = Str
     replot_needed = Event
     _reverse_sorted_analyses = False
 
     options = Any
 
-    # x_grid_visible = Bool(True)
-    # y_grid_visible = Bool(True)
     use_sparse_ticks = Bool(True)
 
     refresh_unknowns_table = Event
@@ -141,7 +106,6 @@ class BaseArArFigure(SelectionFigure):
             make plots
         """
 
-        self._plots = plots
         graph = self.graph
 
         vertical_resize = not all([p.height for p in plots])
@@ -275,7 +239,7 @@ class BaseArArFigure(SelectionFigure):
     def _cmp_analyses(self, x):
         return x.timestamp
 
-    def _unpack_attr(self, attr, exclude_omit=False, nonsorted=False):
+    def _unpack_attr(self, attr, scalar=1, exclude_omit=False, nonsorted=False):
         def gen():
             ans = self.sorted_analyses
             if nonsorted:
@@ -285,7 +249,7 @@ class BaseArArFigure(SelectionFigure):
                     continue
 
                 v = ai.get_value(attr)
-                yield v or ufloat(0, 0)
+                yield v * scalar or ufloat(0, 0)
 
         return gen()
 
@@ -422,9 +386,13 @@ class BaseArArFigure(SelectionFigure):
         k = 'kca'
         return self._plot_aux('K/Ca', k, po, pid)
 
-    def _plot_moles_k39(self, po, pobj, pid):
+    def _plot_signal_k39(self, po, pobj, pid):
         k = 'k39'
         return self._plot_aux('<sup>39</sup>Ar<sub>K</sub>(fA)', k, po, pid)
+
+    def _plot_moles_k39(self, po, pobj, pid):
+        k = 'moles_k39'
+        return self._plot_aux('<sup>39</sup>Ar<sub>K</sub>(mol)', k, po, pid)
 
     def _plot_moles_ar40(self, po, pobj, pid):
         k = 'Ar40'
@@ -438,8 +406,8 @@ class BaseArArFigure(SelectionFigure):
         k = 'extract_value'
         return self._plot_aux('Extract Value', k, po, pid)
 
-    def _get_aux_plot_data(self, k):
-        vs = list(self._unpack_attr(k))
+    def _get_aux_plot_data(self, k, scalar=1):
+        vs = list(self._unpack_attr(k, scalar=scalar))
         return [nominal_value(vi) for vi in vs], [std_dev(vi) for vi in vs]
 
     def _set_ml_title(self, text, plotid, ax):
@@ -490,7 +458,8 @@ class BaseArArFigure(SelectionFigure):
             ctx = {'aliquot': si.aliquot,
                    'step': si.step,
                    'sample': si.sample,
-                   'name': si.name}
+                   'name': si.name,
+                   'label_name': si.label_name}
 
             x = f.format(**ctx)
             labels.append(x)
@@ -505,7 +474,6 @@ class BaseArArFigure(SelectionFigure):
     def _add_error_bars(self, scatter, errors, axis, nsigma,
                         end_caps,
                         visible=True):
-
         ebo = ErrorBarOverlay(component=scatter,
                               orientation=axis,
                               nsigma=nsigma,
@@ -623,11 +591,12 @@ class BaseArArFigure(SelectionFigure):
     def _build_label_text(self, x, we, n,
                           total_n=None,
                           mswd_args=None,
+                          display_n=True,
+                          display_mswd=True,
                           percent_error=False,
                           sig_figs=3):
 
-        display_n = True
-        display_mswd = n >= 2
+        display_mswd = n >= 2 and display_mswd
 
         if display_n:
             if total_n and n != total_n:
@@ -640,7 +609,7 @@ class BaseArArFigure(SelectionFigure):
         if mswd_args and display_mswd:
             mswd, valid_mswd, _ = mswd_args
             vd = '' if valid_mswd else '*'
-            mswd = '{}mswd= {:0.2f}'.format(vd, mswd)
+            mswd = '{} MSWD= {:0.2f}'.format(vd, mswd)
         else:
             mswd = ''
 
@@ -697,6 +666,8 @@ class BaseArArFigure(SelectionFigure):
 
                 break
 
+    def _analysis_group_hook(self, ag):
+        pass
     # ===============================================================================
     # property get/set
     # ===============================================================================
@@ -708,6 +679,15 @@ class BaseArArFigure(SelectionFigure):
 
     @cached_property
     def _get_analysis_group(self):
-        return self._analysis_group_klass(analyses=self.sorted_analyses)
+        ag = self._analysis_group
+        if ag is None:
+            ag = self._analysis_group_klass(group_id=self.group_id,
+                                            analyses=self.sorted_analyses)
+            self._analysis_group_hook(ag)
+
+        return ag
+
+    def _set_analysis_group(self, v):
+        self._analysis_group = v
 
 # ============= EOF =============================================

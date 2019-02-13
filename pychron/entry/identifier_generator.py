@@ -15,8 +15,6 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
-from __future__ import absolute_import
-from __future__ import print_function
 from traits.api import Any, Str, List, Bool, Int, CInt, Instance
 from traitsui.api import View
 from traitsui.item import Item
@@ -25,7 +23,6 @@ from pychron.core.progress import open_progress
 from pychron.core.ui.combobox_editor import ComboboxEditor
 from pychron.loggable import Loggable
 from pychron.persistence_loggable import PersistenceMixin
-from six.moves import map
 
 
 def get_maxs(lns):
@@ -36,9 +33,11 @@ def get_maxs(lns):
             x = 0
         return x
 
-    lns = list(map(func, lns))
+    lns = [func(li) for li in lns]
+    return [max(gi) for gi in group_runs(lns)]
 
-    return list(map(max, group_runs(lns)))
+    # lns = list(map(func, lns))
+    # return list(map(max, group_runs(lns)))
 
 
 def group_runs(li, tolerance=1000):
@@ -242,6 +241,7 @@ class IdentifierGenerator(Loggable, PersistenceMixin):
                 if self.is_preview:
                     r = self._get_position_is_monitor(x)
                 else:
+                    # print('dsaf', x.sample.name, self.monitor_name, x.sample.name == self.monitor_name)
                     try:
                         r = x.sample.name == self.monitor_name
                     except AttributeError as e:

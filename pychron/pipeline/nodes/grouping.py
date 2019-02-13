@@ -14,57 +14,40 @@
 # limitations under the License.
 # ===============================================================================
 
-# ============= enthought library imports =======================
 from operator import attrgetter
 
-from traits.api import Str, Enum, Bool
-from traitsui.api import View, UItem, EnumEditor, VGroup, Item
-
-from itertools import groupby
 from numpy import array, array_split
+# ============= enthought library imports =======================
+from traits.api import Str, Enum
+from traitsui.api import View, UItem, EnumEditor, VGroup
 
 from pychron.core.helpers.datetime_tools import bin_timestamps
+from pychron.pipeline.grouping import group_analyses_by_key
 from pychron.pipeline.nodes.base import BaseNode
-from pychron.pipeline.tagging import apply_subgrouping, compress_groups
-from pychron.processing.analyses.analysis_group import AnalysisGroup, StepHeatAnalysisGroup, InterpretedAgeGroup
-
-
-def group_analyses_by_key(items, key, attr='group_id', id_func=None):
-    if isinstance(key, str):
-        keyfunc = lambda x: getattr(x, key)
-    else:
-        keyfunc = key
-
-    ids = []
-    for it in items:
-        v = keyfunc(it)
-        if v not in ids:
-            ids.append(v)
-
-    sitems = sorted(items, key=keyfunc)
-    for k, analyses in groupby(sitems, key=keyfunc):
-        gid = ids.index(k)
-        if id_func:
-            gid = id_func(gid, analyses)
-        for it in analyses:
-            setattr(it, attr, gid)
+from pychron.pipeline.subgrouping import apply_subgrouping, compress_groups
+from pychron.processing.analyses.preferred import get_preferred_grp, Preferred
+from pychron.pychron_constants import SUBGROUPING_ATTRS, WEIGHTED_MEAN, \
+    MSEM, SD, DEFAULT_INTEGRATED
 
 
 class GroupingNode(BaseNode):
     by_key = Str
-    keys = ('Aliquot', 'Identifier', 'Step', 'Comment', 'SubGroup', 'No Grouping')
+    keys = ('Aliquot', 'Comment', 'Identifier', 'Sample', 'Step', 'SubGroup', 'No Grouping')
     analysis_kind = 'unknowns'
     name = 'Grouping'
     title = 'Edit Grouping'
 
-    _attr = 'group_id'
+    attribute = Enum('Group', 'Graph', 'Tab')
+    # _attr = 'group_id'
     _id_func = None
-    mean_groups = Bool(False)
-    meanify_enabled = Bool(True)
+
+    _sorting_enabled = True
+    _cached_items = None
+    _state = None
+    _parent_group = None
 
     def load(self, nodedict):
         self.by_key = nodedict.get('key', 'Identifier')
-        self.meanify_enabled = nodedict.get('meanify_enabled', True)
 
     def _to_template(self, d):
         d['key'] = self.by_key
@@ -74,30 +57,47 @@ class GroupingNode(BaseNode):
             return attrgetter(self.by_key.lower())
 
     def run(self, state):
-        if self.by_key != 'No Grouping':
-            unks = getattr(state, self.analysis_kind)
-            for unk in unks:
-                setattr(unk, self._attr, 0)
+        self._run(state)
 
+    def post_run(self, engine, state):
+        self._state = None
+
+    def _run(self, state):
+        unks = getattr(state, self.analysis_kind)
+        self._state = state
+
+        # print('clearsd', self._attr)
+        for unk in unks:
+            self._clear_grouping(unk)
+
+        if self.by_key != 'No Grouping':
             key = self._generate_key()
-            if self.mean_groups:
-                gs = []
-                for k, ans in groupby(sorted(unks, key=key), key=key):
-                    a = InterpretedAgeGroup(analyses=list(ans))
-                    if 'plateau' in k:
-                        a.preferred_age_kind = 'plateau'
-                    gs.append(a)
-                setattr(state, self.analysis_kind, gs)
-            else:
-                group_analyses_by_key(unks, key=self._generate_key(), attr=self._attr, id_func=self._id_func)
+            items = group_analyses_by_key(unks, key=key, attr=self._attr, id_func=self._id_func,
+                                          sorting_enabled=self._sorting_enabled,
+                                          parent_group=self._parent_group)
+
+            setattr(state, self.analysis_kind, items)
+            setattr(self, self.analysis_kind, items)
+
+    def _clear_grouping(self, unk):
+        setattr(unk, self._attr, 0)
+
+    @property
+    def _attr(self):
+        return '{}_id'.format(self.attribute.lower())
 
     def traits_view(self):
-        v = View(UItem('by_key',
-                       style='custom',
-                       editor=EnumEditor(name='keys')),
-                 Item('mean_groups', label='Meanify Groups',
-                      visible_when='meanify_enabled',
-                      enabled_when='by_key=="SubGroup"'),
+        kgrp = VGroup(UItem('by_key',
+                            style='custom',
+                            editor=EnumEditor(name='keys')),
+                      show_border=True,
+                      label='Key')
+
+        agrp = VGroup(UItem('attribute',
+                            tooltip='Group=Display all groups on a single graph\n'
+                                    'Graph=Display groups on separate graphs\n'
+                                    'Tab=Display groups on separate tabs'), label='To Group', show_border=True)
+        v = View(VGroup(agrp, kgrp),
                  width=300,
                  title=self.title,
                  buttons=['OK', 'Cancel'],
@@ -111,35 +111,71 @@ class GraphGroupingNode(GroupingNode):
     _attr = 'graph_id'
 
 
-class SubGroupingNode(GroupingNode):
+class SubGroupingNode(GroupingNode, Preferred):
     title = 'Edit SubGrouping'
     keys = ('Aliquot', 'Identifier', 'Step', 'Comment', 'No Grouping')
     name = 'SubGroup'
     by_key = 'Aliquot'
-    _attr = 'subgroup'
-    grouping_kind = Enum('Weighted Mean', 'Plateau', 'Isochron', 'Plateau else Weighted Mean', 'Integrated')
+    attribute = 'subgroup'
+
+    # include_j_error_in_individual_analyses = Bool(False)
+    # include_j_error_in_mean = Bool(True)
+
+    _sorting_enabled = False
+    _parent_group = 'group_id'
 
     def load(self, nodedict):
         self.by_key = nodedict.get('key', 'Aliquot')
 
-    def _id_func(self, gid, analyses):
-        tag = self.grouping_kind.lower().replace(' ', '_')
+    def _clear_grouping(self, unk):
+        unk.subgroup = None
 
-        apply_subgrouping(tag, list(analyses), gid=gid)
+    def _id_func(self, gid, analyses):
+        analyses = list(analyses)
+        naliquots = len({a.aliquot for a in analyses})
+        for attr in SUBGROUPING_ATTRS:
+            if attr == 'age':
+                continue
+
+            pv = self._get_pv(attr)
+            if attr == 'age':
+                kind, error = WEIGHTED_MEAN, MSEM
+            else:
+                kind = WEIGHTED_MEAN if naliquots > 1 else DEFAULT_INTEGRATED
+                error = MSEM if naliquots > 1 else SD
+
+            pv.kind = kind
+            pv.error_kind = error
+
+        grouping = {'{}_kind'.format(pv.attr): pv.kind for pv in self.preferred_values}
+        grouping.update({'{}_error_kind'.format(pv.attr): pv.error_kind for pv in self.preferred_values})
+
+        apply_subgrouping(grouping, analyses, gid=gid)
+
+    def _pre_run_hook(self, state):
+        # unks = getattr(state, self.analysis_kind)
+        self._run(state)
+
+    def _by_key_changed(self):
+        if self._state:
+            self._run(self._state)
 
     def run(self, state):
-        super(SubGroupingNode, self).run(state)
+        self._run(state)
 
         ans = getattr(state, self.analysis_kind)
         compress_groups(ans)
 
     def traits_view(self):
+
         v = View(VGroup(VGroup(UItem('by_key',
                                      style='custom',
                                      editor=EnumEditor(name='keys')),
                                show_border=True, label='Grouping'),
-                        VGroup(Item('grouping_kind', label='Grouping Type'), show_border=True)),
-                 width=300,
+
+                        get_preferred_grp(label='Types', show_border=True)),
+                 width=500,
+                 resizable=True,
                  title=self.title,
                  buttons=['OK', 'Cancel'],
                  kind='livemodal')

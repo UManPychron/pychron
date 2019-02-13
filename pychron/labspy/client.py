@@ -14,8 +14,6 @@
 # limitations under the License.
 # ===============================================================================
 
-# ============= enthought library imports =======================
-from __future__ import absolute_import
 import hashlib
 import os
 import time
@@ -23,6 +21,7 @@ from datetime import datetime
 from threading import Thread, Lock
 
 import yaml
+# ============= enthought library imports =======================
 from apptools.preferences.preference_binding import bind_preference
 from traits.api import Instance, Bool, Int
 
@@ -32,8 +31,6 @@ from pychron.labspy.database_adapter import LabspyDatabaseAdapter
 from pychron.loggable import Loggable
 from pychron.paths import paths
 from pychron.pychron_constants import SCRIPT_NAMES, NULL_STR
-from six.moves import map
-from six.moves import range
 
 
 def auto_connect(func):
@@ -110,9 +107,7 @@ class LabspyClient(Loggable):
 
         self.debug('Start Connection status timer')
         if self.application and self.use_connection_status:
-            self.debug(
-                'timer started period={}'.format(
-                    self.connection_status_period))
+            self.debug('timer started period={}'.format(self.connection_status_period))
 
             devs = self.application.get_services(ICoreDevice)
             if devs:
@@ -199,11 +194,10 @@ class LabspyClient(Loggable):
         except ValueError:
             pass
 
-        with self.db.session_ctx():
-            self.db.set_connection(ts,
-                                   appname.strip(),
-                                   user.strip(),
-                                   devname, com, addr, status)
+        self.db.set_connection(ts,
+                               appname.strip(),
+                               user.strip(),
+                               devname, com, addr, status)
 
     @auto_connect
     def update_status(self, **kw):
@@ -244,7 +238,7 @@ class LabspyClient(Loggable):
                     v = getattr(run, value)(*args)
                 except AttributeError:
                     continue
-                    
+
                 self.db.add_measurement('{}Monitor'.format(ms), '{}{}'.format(ms, name), v, units)
 
     @auto_connect
@@ -349,7 +343,7 @@ class LabspyClient(Loggable):
                                                   ('state', 'State'))}
 
         for si in SCRIPT_NAMES:
-            k = ''.join(map(str.capitalize, si.split('_')[:-1]))
+            k = ''.join([sii.capitalize() for sii in si.split('_')[:-1]])
             d[k] = getattr(spec, si)
 
         return d
@@ -363,14 +357,12 @@ class LabspyClient(Loggable):
 
 
 # ================= testing =========================
-
-if __name__ == '__main__':
+def main1():
     from random import random
 
     # from pychron.paths import paths
 
     paths.build('_dev')
-
 
     # def add_runs(c, e):
     # class Spec():
@@ -433,7 +425,6 @@ if __name__ == '__main__':
 
             time.sleep(1)
 
-
     logging_setup('labspyclient', use_archiver=False)
     # c = LabspyClient(bind=False, host='129.138.12.138', port=27017)
     # c = MeteorLabspyClient(bind=False, host='localhost', port=3001)
@@ -458,4 +449,24 @@ if __name__ == '__main__':
     # experiments/runs
     # exp = add_experiment(clt)
     # add_runs(clt, exp)
+
+def main2():
+    clt = LabspyClient(bind=False)
+    clt.db.host = '129.138.12.160'
+    clt.db.username = os.environ.get('DB_USER')
+    clt.db.password = os.environ.get('DB_PWD')
+    clt.db.name = 'labspy'
+    clt.test_connection()
+
+    for tag in ('lab_temperatures', 'lab_humiditys', 'lab_pneumatics'):
+        st = time.time()
+        try:
+            print(getattr(clt, 'get_latest_{}'.format(tag))())
+            print('Get latest {}. elapsed: {}'.format(tag, time.time() - st))
+        except BaseException as e:
+            pass
+
+
+if __name__ == '__main__':
+    main2()
 # ============= EOF =============================================

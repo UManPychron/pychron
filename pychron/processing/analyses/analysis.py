@@ -15,10 +15,11 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
-from __future__ import absolute_import
-from __future__ import print_function
 from collections import namedtuple
+from math import ceil
+from operator import attrgetter
 
+import six
 from numpy import Inf
 from pyface.message_dialog import information
 from pyface.qt import QtCore
@@ -32,11 +33,11 @@ from pychron.core.helpers.isotope_utils import sort_isotopes
 from pychron.core.helpers.logger_setup import new_logger
 from pychron.envisage.view_util import open_view
 from pychron.experiment.utilities.identifier import make_runid, make_aliquot_step
+from pychron.graph.stacked_regression_graph import ColumnStackedRegressionGraph, StackedRegressionGraph
 from pychron.processing.arar_age import ArArAge
 from pychron.processing.arar_constants import ArArConstants
 from pychron.processing.isotope import Isotope
 from pychron.pychron_constants import PLUSMINUS, NULL_STR
-import six
 
 Fit = namedtuple('Fit', 'fit '
                         'filter_outliers filter_outlier_iterations filter_outlier_std_devs '
@@ -48,6 +49,8 @@ EXTRACTION_ATTRS = ('weight', 'extract_device', 'tray', 'extract_value',
                     'extract_units',
                     # 'duration',
                     # 'cleanup',
+                    'load_name',
+                    'load_holder',
                     'extract_duration',
                     'cleanup_duration',
                     'pattern', 'beam_diameter', 'ramp_duration', 'ramp_rate')
@@ -59,7 +62,7 @@ META_ATTRS = ('analysis_type', 'uuid', 'identifier', 'aliquot', 'increment',
               'username', 'queue_conditionals_name',
               'repository_identifier',
               'acquisition_software',
-              'data_reduction_software', 'instrument_name', 'laboratory', 'experiment_queue_name')
+              'data_reduction_software', 'instrument_name', 'laboratory', 'experiment_queue_name', 'experiment_type')
 
 
 def min_max(a, b, vs):
@@ -85,12 +88,11 @@ class CloseHandler(Handler):
         info.ui.control.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
 
 
-def show_evolutions_factory(record_id, isotopes, show_evo=True, show_equilibration=False, show_baseline=False):
+def show_evolutions_factory(record_id, isotopes, show_evo=True, show_equilibration=False, show_baseline=False,
+                            show_statistics=False, ncols=1):
     if WINDOW_CNT > 20:
         information(None, 'You have too many Isotope Evolution windows open. Close some before proceeding')
         return
-
-    from pychron.graph.stacked_regression_graph import StackedRegressionGraph
 
     if not show_evo:
         xmi = Inf
@@ -98,13 +100,33 @@ def show_evolutions_factory(record_id, isotopes, show_evo=True, show_equilibrati
     else:
         xmi, xma = 0, -Inf
 
-    g = StackedRegressionGraph(resizable=True)
-    g.plotcontainer.spacing = 10
+    if ncols > 1:
+        isotopes = sort_isotopes(isotopes, reverse=True, key=attrgetter('name'))
+
+        def reorder(l, n):
+            l = [l[i:i + n] for i in range(0, len(l), n)]
+            nl = []
+            for ri in range(len(l[0])):
+                for col in l:
+                    try:
+                        nl.append(col[ri])
+                    except IndexError:
+                        pass
+            return nl
+
+        nrows = ceil(len(isotopes)/ncols)
+        isotopes = reorder(isotopes, nrows)
+        g = ColumnStackedRegressionGraph(resizable=True, ncols=ncols, nrows=nrows,
+                                         container_dict={'padding_top': 40,
+                                                         'padding_bottom': 40})
+    else:
+        isotopes = sort_isotopes(isotopes, reverse=False, key=attrgetter('name'))
+        g = StackedRegressionGraph(resizable=True, container_dict={'spacing': 10})
+
+    # g.plotcontainer.spacing = 10
     g.window_height = min(275 * len(isotopes), 800)
     g.window_x = OX + XOFFSET * WINDOW_CNT
     g.window_y = OY + YOFFSET * WINDOW_CNT
-
-    isotopes = sort_isotopes(isotopes, reverse=False, key=lambda x: x.name)
 
     for i, iso in enumerate(isotopes):
         ymi, yma = Inf, -Inf
@@ -114,42 +136,45 @@ def show_evolutions_factory(record_id, isotopes, show_evo=True, show_equilibrati
         g.add_limit_tool(p, 'y')
         g.add_axis_tool(p, p.x_axis)
         g.add_axis_tool(p, p.y_axis)
+        if show_statistics:
+            g.add_statistics(i)
 
         p.y_axis.title_spacing = 50
         if show_equilibration:
             sniff = iso.sniff
             if sniff.xs.shape[0]:
-                g.new_series(sniff.xs, sniff.ys,
+                g.new_series(sniff.offset_xs, sniff.ys,
                              type='scatter',
                              fit=None,
                              color='red')
                 ymi, yma = min_max(ymi, yma, sniff.ys)
-                xmi, xma = min_max(xmi, xma, sniff.xs)
+                xmi, xma = min_max(xmi, xma, sniff.offset_xs)
 
         if show_evo:
             if iso.fit is None:
                 iso.fit = 'linear'
 
-            g.new_series(iso.xs, iso.ys,
-                         fit=iso.fit,
+            g.new_series(iso.offset_xs, iso.ys,
+                         fit=iso.efit,
+                         truncate=iso.truncate,
                          filter_outliers_dict=iso.filter_outliers_dict,
                          color='black')
             ymi, yma = min_max(ymi, yma, iso.ys)
-            xmi, xma = min_max(xmi, xma, iso.xs)
+            xmi, xma = min_max(xmi, xma, iso.offset_xs)
 
         if show_baseline:
             baseline = iso.baseline
-            g.new_series(baseline.xs, baseline.ys,
-                         type='scatter', fit=baseline.fit,
+            g.new_series(baseline.offset_xs, baseline.ys,
+                         type='scatter', fit=baseline.efit,
                          filter_outliers_dict=baseline.filter_outliers_dict,
                          color='blue')
             ymi, yma = min_max(ymi, yma, baseline.ys)
-            xmi, xma = min_max(xmi, xma, baseline.xs)
+            xmi, xma = min_max(xmi, xma, baseline.offset_xs)
 
         g.set_x_limits(min_=xmi, max_=xma, pad='0.025,0.05')
         g.set_y_limits(min_=ymi, max_=yma, pad='0.05', plotid=i)
         g.set_x_title('Time (s)', plotid=i)
-        g.set_y_title('{} (fA)'.format(iso.name), plotid=i)
+        g.set_y_title('{} ({})'.format(iso.name, iso.units), plotid=i)
 
     g.refresh()
     g.window_title = '{} {}'.format(record_id, ','.join([i.name for i in reversed(isotopes)]))
@@ -158,9 +183,12 @@ def show_evolutions_factory(record_id, isotopes, show_evo=True, show_equilibrati
 
 
 class IdeogramPlotable(HasTraits):
+    history_id = 0
     group_id = 0
     graph_id = 0
-    name = ''
+    tab_id = 0
+
+    _label_name = None
 
     tag = 'ok'
     tag_note = ''
@@ -175,12 +203,30 @@ class IdeogramPlotable(HasTraits):
     aliquot = 0
     step = ''
     timestamp = 0
-    subgroup = ''
+    uuid = None
 
     def __init__(self, make_arar_constants=True, *args, **kw):
         super(IdeogramPlotable, self).__init__(*args, **kw)
         if make_arar_constants:
             self.arar_constants = ArArConstants()
+
+    def baseline_corrected_intercepts_to_dict(self):
+        pass
+
+    def blanks_to_dict(self):
+        pass
+
+    def icfactors_to_dict(self):
+        pass
+
+    def interference_corrected_values_to_dict(self):
+        pass
+
+    def ic_corrected_values_to_dict(self):
+        pass
+
+    def decay_corrected_values_to_dict(self):
+        pass
 
     def refresh_view(self):
         pass
@@ -214,6 +260,25 @@ class IdeogramPlotable(HasTraits):
         a, e = self._value_string(t)
         pe = format_percent_error(a, e)
         return u'{} {}{} ({}%)'.format(floatfmt(a), PLUSMINUS, floatfmt(e), pe)
+
+    @property
+    def display_uuid(self):
+        u = self.uuid
+        if not u:
+            u = ''
+        return u[:8]
+
+    @property
+    def label_name(self):
+        n = self._label_name
+        if n is None:
+            n = '{:02n}'.format(self.aliquot)
+
+        return n
+
+    @label_name.setter
+    def label_name(self, v):
+        self._label_name = v
 
     @property
     def status_text(self):
@@ -272,11 +337,11 @@ class Analysis(ArArAge, IdeogramPlotable):
     laboratory = ''
     instrument_name = ''
     analystName = ''
-    uuid = None  # Str
     measured_response_stream = None
     requested_output_stream = None
     setpoint_stream = None
-    loadname = ''
+    load_name = ''
+    load_holder = ''
 
     experiment_queue_name = ''
 
@@ -313,10 +378,12 @@ class Analysis(ArArAge, IdeogramPlotable):
     additional_peak_center_data = None
     collection_version = ''
     source_parameters = Dict
+    filament_parameters = Dict
     deflections = Dict
     gains = Dict
     repository_identifier = ''
 
+    admit_delay = 0
     # processing
     is_plateau_step = False
     # temp_status = Int(0)
@@ -348,25 +415,25 @@ class Analysis(ArArAge, IdeogramPlotable):
     invalid_event = Event
     omit_event = Event
 
-    standard_name = None
-    standard_age = None
-    standard_material = None
+    monitor_name = None
+    monitor_age = None
+    monitor_material = None
 
-    _experiment_type = None
+    _extraction_type = None
 
     @property
-    def experiment_type(self):
-        if self._experiment_type:
-            return self._experiment_type
+    def extraction_type(self):
+        if self._extraction_type:
+            return self._extraction_type
 
         if self.step:
             return 'Incremental Heating'
         else:
             return 'Laser Fusion'
 
-    @experiment_type.setter
-    def experiment_type(self, v):
-        self._experiment_type = v
+    @extraction_type.setter
+    def extraction_type(self, v):
+        self._extraction_type = v
 
     def get_baseline_corrected_signal_dict(self):
         get = lambda iso: iso.get_baseline_corrected_value()
@@ -385,7 +452,7 @@ class Analysis(ArArAge, IdeogramPlotable):
 
         return r
 
-    def show_isotope_evolutions(self, isotopes=None, **kw):
+    def get_isotope_evolutions(self, isotopes=None, load_data=True, **kw):
         if isotopes:
             if isinstance(isotopes[0], (str, six.text_type)):
                 nisotopes = []
@@ -397,17 +464,19 @@ class Analysis(ArArAge, IdeogramPlotable):
                     if iso:
                         nisotopes.append(iso)
                 isotopes = nisotopes
-                # isotopes = [self.isotopes[i] for i in isotopes]
         else:
             isotopes = list(self.isotopes.values())
 
-        keys = ['{}{}'.format(k.name, k.detector) for k in isotopes]
+        if load_data:
+            keys = ['{}{}'.format(k.name, k.detector) for k in isotopes]
+            self.load_raw_data(keys=keys)
 
-        self.load_raw_data(keys=keys)
-        g = show_evolutions_factory(self.record_id, isotopes, **kw)
+        return show_evolutions_factory(self.record_id, isotopes, **kw)
+
+    def show_isotope_evolutions(self, *args, **kw):
+        g = self.get_isotope_evolutions(*args, **kw)
         if g:
             open_view(g, handler=CloseHandler())
-
             return g
 
     def trigger_recall(self, analyses=None):
@@ -497,7 +566,7 @@ class Analysis(ArArAge, IdeogramPlotable):
 
     def _get_isotope_dict(self, get):
         d = dict()
-        for ki, v in six.iteritems(self.isotopes):
+        for ki, v in self.isotopes.items():
             d[ki] = (v.detector, get(v))
 
         return d

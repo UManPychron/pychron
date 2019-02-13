@@ -16,33 +16,38 @@
 
 # ============= enthought library imports =======================
 from __future__ import absolute_import
+
 import os
-from itertools import groupby
-from operator import attrgetter
 
 from chaco.plot_label import PlotLabel
 from enable.component_editor import ComponentEditor as EnableComponentEditor
-from traits.api import List, Property, Event, cached_property, Any
+from traits.api import Property, Event, cached_property, Any
 from traitsui.api import View, UItem
 
-from pychron.envisage.tasks.base_editor import grouped_name, BaseTraitsEditor
+from pychron.core.codetools.inspection import caller
+from pychron.core.helpers.iterfuncs import groupby_group_id
+from pychron.pipeline.plot.editors.base_editor import BaseEditor
 from pychron.pipeline.plot.figure_container import FigureContainer
 
 
 class WarningLabel(PlotLabel):
     def _layout_as_overlay(self, size=None, force=False):
-        self.x = self.component.x+self.component.width/2
-        self.y = self.component.y+self.component.height/2
+        self.x = self.component.x + self.component.width / 2
+        self.y = self.component.y + self.component.height / 2
 
 
-class GraphEditor(BaseTraitsEditor):
-    analyses = List
+class GraphEditor(BaseEditor):
     refresh_needed = Event
     save_needed = Event
     component = Property(depends_on='refresh_needed')
     basename = ''
     figure_model = Any
     figure_container = Any
+
+    @property
+    @caller
+    def analyses(self):
+        return self.items
 
     def save_file(self, path, force_layout=True, dest_box=None):
         _, tail = os.path.splitext(path)
@@ -77,42 +82,44 @@ class GraphEditor(BaseTraitsEditor):
 
     def set_items(self, ans, is_append=False, refresh=False, compress=True):
         if is_append:
-            self.analyses.extend(ans)
+            self.items.extend(ans)
         else:
-            self.analyses = ans
+            self.items = ans
 
-        if self.analyses:
+        if self.items:
             self._set_name()
             if compress:
                 self._compress_groups()
             if refresh:
                 self.refresh_needed = True
 
-    def _set_name(self):
-        na = sorted(list(set([ni.identifier for ni in self.analyses])))
-        na = grouped_name(na)
-        self.name = '{} {}'.format(na, self.basename)
-
     def _compress_groups(self):
-        ans = self.analyses
+        ans = self.items
         if ans:
-            key = attrgetter('group_id')
-            ans = sorted(ans, key=key)
-            groups = groupby(ans, key)
-
-            for i, (gid, analyses) in enumerate(groups):
+            for i, (gid, analyses) in enumerate(groupby_group_id(ans)):
                 for ai in analyses:
                     ai.group_id = i
 
     @cached_property
     def _get_component(self):
-        if self.analyses:
-            if self.figure_container:
-                self.figure_container.model_changed(False)
-            return self._component_factory()
+        if self.items:
+            model = self._figure_model_factory()
+            if not self.figure_container:
+                self.figure_container = FigureContainer()
+
+            omodel = self.figure_container.model
+            self.figure_container.model = model
+            if model == omodel:
+                self.figure_container.model_changed()
+
+            self._get_component_hook()
+            return self.figure_container.component
 
         else:
             return self._no_component_factory()
+
+    def _get_component_hook(self):
+        pass
 
     def _no_component_factory(self):
         container = self.figure_container
@@ -131,11 +138,14 @@ class GraphEditor(BaseTraitsEditor):
     def _component_factory(self):
         raise NotImplementedError
 
+    def get_component_view(self):
+        return UItem('component',
+                     style='custom',
+                     # width=650,
+                     editor=EnableComponentEditor())
+
     def traits_view(self):
-        v = View(UItem('component',
-                       style='custom',
-                       width=650,
-                       editor=EnableComponentEditor()),
+        v = View(self.get_component_view(),
                  resizable=True)
         return v
 

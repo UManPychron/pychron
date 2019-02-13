@@ -15,7 +15,6 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
-from itertools import groupby
 from math import isinf
 
 from chaco.legend import Legend
@@ -23,6 +22,7 @@ from numpy import inf
 from traits.api import HasTraits, Any, List, Str
 
 from pychron.core.codetools.inspection import caller
+from pychron.core.helpers.iterfuncs import groupby_group_id
 from pychron.processing.analysis_graph import AnalysisStackedGraph
 
 
@@ -43,6 +43,7 @@ class FigurePanel(HasTraits):
     use_previous_limits = True
 
     track_value = True
+
     # @on_trait_change('analyses[]')
     # def _analyses_items_changed(self):
     #     self.figures = self._make_figures()
@@ -50,12 +51,12 @@ class FigurePanel(HasTraits):
     def make_figures(self):
         self.figures = self._make_figures()
 
+    def _figure_factory(self, *args, **kw):
+        return self._figure_klass(*args, **kw)
+
     def _make_figures(self, **kw):
-        key = lambda x: x.group_id
-        ans = sorted(self.analyses, key=key)
-        gs = [self._figure_klass(analyses=list(ais),
-                                 group_id=gid, **kw)
-              for gid, ais in groupby(ans, key=key)]
+        gs = [self._figure_factory(analyses=list(ais), group_id=gid, **kw)
+              for gid, ais in groupby_group_id(self.analyses)]
         return gs
 
     # def dump_metadata(self):

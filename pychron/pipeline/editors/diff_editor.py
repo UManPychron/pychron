@@ -16,6 +16,7 @@
 
 # ============= enthought library imports =======================
 from __future__ import absolute_import
+
 import os
 
 import yaml
@@ -33,7 +34,6 @@ from pychron.envisage.tasks.base_editor import BaseTraitsEditor
 from pychron.mass_spec.mass_spec_recaller import MassSpecRecaller
 from pychron.paths import paths
 from pychron.pychron_constants import PLUSMINUS_ONE_SIGMA
-import six
 
 DIFF_TOLERANCE_PERCENT = 0.01
 
@@ -176,9 +176,16 @@ class Value(HasTraits):
             return 'NaN'
 
     def _get_diff(self):
-        return self.lvalue - self.rvalue
+        diff = self.lvalue - self.rvalue
+        return diff
 
     def _get_enabled(self):
+        if not self.lvalue and not self.rvalue:
+            return False
+
+        if self.lvalue <= 1e-20 and self.rvalue <= 1e-20:
+            return False
+
         t = True
         d = self.percent_diff
         if d != 'NaN':
@@ -264,7 +271,7 @@ class DiffEditor(BaseTraitsEditor):
         vs = []
         pfunc = lambda x: lambda n: u'{} {}'.format(x, n)
 
-        if not self.is_blank and not self.is_air: 
+        if not self.is_blank and not self.is_air:
             vs.append(Value(name='J',
                             lvalue=nominal_value(left.j or 0),
                             rvalue=nominal_value(right.j or 0)))
@@ -296,22 +303,22 @@ class DiffEditor(BaseTraitsEditor):
 
             vs.append(Value(name='Ca37/K39', lvalue=nominal_value(ca / k),
                             rvalue=nominal_value(right.r3739)))
-            vs.append(Value(name='Ca/K', lvalue=nominal_value(left.kca) ** -1,
-                            rvalue=nominal_value(right.kca) ** -1))
+            vs.append(Value(name='K/Ca', lvalue=nominal_value(left.kca),
+                            rvalue=nominal_value(right.kca)))
 
             cl = left.get_non_ar_isotope('cl38')
             vs.append(Value(name='Cl38/K39', lvalue=nominal_value(cl / k),
                             rvalue=nominal_value(right.Cl3839)))
-            vs.append(Value(name='Cl/K', lvalue=nominal_value(left.kcl) ** -1,
-                            rvalue=nominal_value(right.kcl) ** -1))
+            vs.append(Value(name='K/Cl', lvalue=nominal_value(left.kcl),
+                            rvalue=nominal_value(right.kcl)))
 
             constants = left.arar_constants
             vv = [Value(name=n, lvalue=nominal_value(getattr(constants, k)),
                         rvalue=nominal_value(getattr(right, k)))
                   for n, k in (('Lambda K', 'lambda_k'),
-                               ('Lambda Ar37', 'lambda_Ar37'),
-                               ('Lambda Ar39', 'lambda_Ar39'),
-                               ('Lambda Cl36', 'lambda_Cl36'))]
+                               ('Lambda Ar37', 'lambda_ar37'),
+                               ('Lambda Ar39', 'lambda_ar39'),
+                               ('Lambda Cl36', 'lambda_cl36'))]
             vs.extend(vv)
 
         def filter_str(ii):
@@ -351,7 +358,7 @@ class DiffEditor(BaseTraitsEditor):
             vs.append(Value(name=func('fN'), lvalue=iso.fn, rvalue=riso.fn))
 
             vs.append(StrValue(name=func('Fit'), lvalue=iso.fit.lower(), rvalue=riso.fit.lower()))
-            vs.append(StrValue(name=func('Filter'), lvalue=filter_str(iso), rvalue=filter_str(iso)))
+            vs.append(StrValue(name=func('Filter'), lvalue=filter_str(iso), rvalue=filter_str(riso)))
             vs.append(Value(name=func('Filter Iter'), lvalue=iso.filter_outliers_dict.get('iterations', 0),
                             rvalue=riso.filter_outliers_dict.get('iterations', 0)))
             vs.append(Value(name=func('Filter SD'), lvalue=iso.filter_outliers_dict.get('std_devs', 0),
@@ -389,12 +396,12 @@ class DiffEditor(BaseTraitsEditor):
                                 rvalue=riso.blank.error))
 
             rpr = right.production_ratios
-            for k, v in six.iteritems(left.production_ratios):
+            for k, v in left.production_ratios.items():
                 vs.append(Value(name=k, lvalue=nominal_value(v),
                                 rvalue=nominal_value(rpr.get(k, 0))))
 
             rifc = right.interference_corrections
-            for k, v in six.iteritems(left.interference_corrections):
+            for k, v in left.interference_corrections.items():
                 vs.append(Value(name=k, lvalue=nominal_value(v),
                                 rvalue=nominal_value(rifc.get(k.lower(), 0))))
 

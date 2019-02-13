@@ -14,26 +14,23 @@
 # limitations under the License.
 # ===============================================================================
 
-# ============= enthought library imports =======================
-from __future__ import absolute_import
-from __future__ import print_function
 import hashlib
 import uuid
 from datetime import datetime
 
+# ============= enthought library imports =======================
 from traits.api import Str, Int, Bool, Float, Property, \
     Enum, on_trait_change, CStr, Long, HasTraits, Instance
 
 from pychron.core.helpers.filetools import remove_extension
 from pychron.core.helpers.logger_setup import new_logger
+from pychron.core.helpers.strtools import csv_to_ints, to_csv_str
 from pychron.experiment.automated_run.result import AutomatedRunResult, AirResult, UnknownResult, BlankResult
 from pychron.experiment.utilities.identifier import get_analysis_type, make_rid, make_runid, is_special, \
     convert_extract_device
 from pychron.experiment.utilities.position_regex import XY_REGEX
 from pychron.experiment.utilities.repository_identifier import make_references_repository_identifier
 from pychron.pychron_constants import SCRIPT_KEYS, SCRIPT_NAMES, ALPHAS, DETECTOR_IC
-import six
-from six.moves import map
 
 logger = new_logger('AutomatedRunSpec')
 
@@ -61,7 +58,10 @@ class AutomatedRunSpec(HasTraits):
     extract_device = Str
     username = Str
     tray = Str
+    load_name = Str
+    load_holder = Str
     queue_conditionals_name = Str
+    sensitivity_units = Str
     # ===========================================================================
     # run id
     # ===========================================================================
@@ -117,6 +117,8 @@ class AutomatedRunSpec(HasTraits):
 
     lab_temperature = 0
     lab_humidity = 0
+    sensitivity = 0
+    sensitivity_units = 'mol/fA'
 
     # ===========================================================================
     # info
@@ -139,6 +141,8 @@ class AutomatedRunSpec(HasTraits):
 
     branch = 'master'
 
+    position_j =0
+    position_jerr =0
     uage = None
     v39 = None
 
@@ -175,7 +179,8 @@ class AutomatedRunSpec(HasTraits):
         result.analysis_timestamp = datetime.now()
         result.isotope_group = arun.isotope_group
         result.tripped_conditional = arun.tripped_conditional
-
+        if arun.peak_center:
+            result.centering_results = arun.peak_center.get_results()
         self.result = result
 
     def is_detector_ic(self):
@@ -200,7 +205,7 @@ class AutomatedRunSpec(HasTraits):
                  'mass_spectrometer', 'extract_device',
                  'extraction_script', 'measurement_script',
                  'post_equilibration_script', 'post_measurement_script']
-        return ','.join(map(str, self.to_string_attrs(attrs)))
+        return to_csv_str(self.to_string_attrs(attrs))
 
     def test_scripts(self, script_context=None, warned=None, duration=True):
         if script_context is None:
@@ -342,11 +347,11 @@ class AutomatedRunSpec(HasTraits):
         return d
 
     def load(self, script_info, params):
-        for k, v in six.iteritems(script_info):
+        for k, v in script_info.items():
             k = k if k == 'script_options' else '{}_script'.format(k)
             setattr(self, k, v)
 
-        for k, v in six.iteritems(params):
+        for k, v in params.items():
             # print 'load', hasattr(self, k), k, v
             if hasattr(self, k):
                 setattr(self, k, v)
@@ -503,7 +508,7 @@ post_equilibration_script, extraction_script, script_options, position, duration
             args = v
         else:
             try:
-                args = list(map(int, v.split(',')))
+                args = csv_to_ints(v)
             except ValueError:
                 logger.debug('Invalid overlap string "{}". Should be of the form "10,60" or "10" '.format(v))
                 return
@@ -559,6 +564,10 @@ post_equilibration_script, extraction_script, script_options, position, duration
     @property
     def sensitivity(self):
         return 0
+
+    @property
+    def sensitivity_units(self):
+        return 'mV/mol'
 
     @property
     def extract_duration(self):
