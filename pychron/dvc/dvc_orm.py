@@ -319,6 +319,9 @@ class MaterialTbl(Base, NameMixin):
     def gname(self):
         return '{} ({})'.format(self.name, self.grainsize) if self.grainsize else self.name
 
+    def __repr__(self):
+        return '{}<{}>'.format(self.__class__.__name__, self.gname)
+
 
 class SampleTbl(Base, NameMixin):
     materialID = Column(Integer, ForeignKey('MaterialTbl.id'))
@@ -330,6 +333,11 @@ class SampleTbl(Base, NameMixin):
 
     storage_location = deferred(stringcolumn(140))
     lithology = deferred(stringcolumn(140))
+
+    lithology_class = deferred(stringcolumn(140))
+    lithology_type = deferred(stringcolumn(140))
+    lithology_group = deferred(stringcolumn(140))
+
     location = deferred(stringcolumn(140))
     approximate_age = deferred(Column(Float))
     elevation = deferred(Column(Float))

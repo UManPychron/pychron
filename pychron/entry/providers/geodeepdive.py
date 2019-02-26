@@ -1,5 +1,5 @@
 # ===============================================================================
-# Copyright 2015 Jake Ross
+# Copyright 2019 ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,24 +13,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===============================================================================
+import requests
 
-# ============= enthought library imports =======================
-from __future__ import absolute_import
-from traits.api import HasTraits, Str, List
-# ============= standard library imports ========================
-# ============= local library imports  ==========================
-from traitsui.api import View, UItem, EnumEditor
+API_URL = 'https://geodeepdive.org/api'
+
+def get_snippet(term):
+    s = requests.Session()
+    url = '{}/snippets?term={}'.format(API_URL, term)
+    r = s.get(url)
+    obj = r.json()
+
+    return obj['success']['data']
 
 
-class SelectExperimentIDView(HasTraits):
-    selected = Str
-    available = List
-
-    traits_view = View(UItem('selected',
-                             width=250,
-                             editor=EnumEditor(name='available')),
-                       buttons=['OK', 'Cancel'],
-                       width=300,
-                       title='Select Experiment')
+if __name__ == '__main__':
+    g = get_snippet('Fish Canyon')
+    for o in g:
+        print(o)
 
 # ============= EOF =============================================

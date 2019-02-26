@@ -41,7 +41,7 @@ from pychron.envisage.tasks.actions import GenericSaveAction, GenericSaveAsActio
     MinimizeAction, PositionAction, IssueAction, CloseAction, CloseOthersAction, AboutAction, OpenAdditionalWindow, \
     NoteAction, RestartAction, DocumentationAction, ChangeLogAction, StartupTestsAction, \
     ShareSettingsAction, ApplySettingsAction
-from pychron.loggable import Loggable
+from pychron.loggable import LoggableMixin
 from pychron.paths import paths
 
 
@@ -132,10 +132,13 @@ class TaskGroup(Group):
     items = List
 
 
-class BaseTask(Task, Loggable, PreferenceMixin):
-    # application = DelegatesTo('window')
+class BaseTask(Task, LoggableMixin, PreferenceMixin):
 
     _full_window = False
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.init_logger()
 
     def _activate_task(self, tid):
         if self.window:
@@ -197,7 +200,7 @@ class BaseTask(Task, Loggable, PreferenceMixin):
             menus = []
 
         edit_menu = SMenu(GenericFindAction(),
-                          id='Edit', name='&Edit')
+                          id='edit.menu', name='&Edit')
 
         # entry_menu = SMenu(
         #     id='entry.menu',

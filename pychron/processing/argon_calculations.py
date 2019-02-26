@@ -271,15 +271,15 @@ def interference_corrections(a39, a37, production_ratios, arar_constants=None, f
         arar_constants = ArArConstants()
 
     pr = production_ratios
-    k37 = ufloat(0, 0, tag='k37')
-
     if arar_constants.k3739_mode.lower() == 'normal' and not fixed_k3739:
-        # iteratively calculate 37, 39
-        for _ in range(5):
-            ca37 = a37 - k37
-            ca39 = pr.get('Ca3937', 0) * ca37
-            k39 = a39 - ca39
-            k37 = pr.get('K3739', 0) * k39
+
+        ca3937 = pr.get('Ca3937', 0)
+        k3739 = pr.get('K3739', 0)
+        k39 = (a39 - ca3937 * a37) / (1 - k3739 * ca3937)
+        k37 = pr.get('K3739', 0) * k39
+
+        ca37 = a37 - k37
+        ca39 = pr.get('Ca3937', 0) * ca37
     else:
         if not fixed_k3739:
             fixed_k3739 = arar_constants.fixed_k3739
@@ -379,7 +379,7 @@ def calculate_F(isotopes, decay_time, interferences=None, arar_constants=None, f
         except ZeroDivisionError:
             rp = ufloat(0, 0)
 
-        comp = {'rad40': rad40, 'a40': a40, 'rad40_percent': rp, 'ca37': ca37, 'ca39': ca39, 'ca36': ca36, 'k39': k39,
+        comp = {'rad40': rad40, 'a40': a40, 'radiogenic_yield': rp, 'ca37': ca37, 'ca39': ca39, 'ca36': ca36, 'k39': k39,
                 'atm40': atm40}
 
         ifc = {'Ar40': a40 - k40, 'Ar39': k39, 'Ar38': a38, 'Ar37': a37, 'Ar36': atm36}
@@ -416,15 +416,22 @@ def age_equation(j, f, include_decay_error=False, lambda_k=None, scalar=None, ar
             arar_constants = ArArConstants()
         lambda_k = arar_constants.lambda_k
 
-    if not scalar:
-        if arar_constants is None:
-            arar_constants = ArArConstants()
-        scalar = float(arar_constants.age_scalar)
+    # if not scalar:
+    #     if arar_constants is None:
+    #         arar_constants = ArArConstants()
+    #     scalar = float(arar_constants.age_scalar)
+
+    if arar_constants is None:
+        arar_constants = ArArConstants()
 
     if not include_decay_error:
         lambda_k = nominal_value(lambda_k)
     try:
-        return (lambda_k ** -1 * umath.log(1 + j * f)) / scalar
+
+        # lambda is defined in years, so age is in years
+        age = lambda_k ** -1 * umath.log(1 + j * f)
+
+        return arar_constants.scale_age(age, current='a')
     except (ValueError, TypeError):
         return ufloat(0, 0)
 

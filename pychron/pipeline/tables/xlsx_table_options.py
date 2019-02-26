@@ -17,17 +17,18 @@ import os
 
 import yaml
 from traits.api import Enum, Bool, Str, Int, Float, Color, List, Directory
-from traitsui.api import VGroup, HGroup, Tabbed, View, Item, UItem, EnumEditor
+from traitsui.api import VGroup, HGroup, Tabbed, Item, UItem, EnumEditor
 from traitsui.item import UCustom
 
 from pychron.core.helpers.filetools import unique_path2, add_extension
+from pychron.core.helpers.traitsui_shortcuts import okcancel_view
 from pychron.core.persistence_options import BasePersistenceOptions
 from pychron.core.pychron_traits import SingleStr
 from pychron.core.ui.combobox_editor import ComboboxEditor
 from pychron.paths import paths
 from pychron.persistence_loggable import dumpable
 from pychron.processing.j_error_mixin import JErrorMixin, J_ERROR_GROUP
-from pychron.pychron_constants import AGE_MA_SCALARS, SIGMA, AGE_SORT_KEYS
+from pychron.pychron_constants import SIGMA, AGE_SORT_KEYS
 
 
 class XLSXAnalysisTableWriterOptions(BasePersistenceOptions, JErrorMixin):
@@ -42,7 +43,7 @@ class XLSXAnalysisTableWriterOptions(BasePersistenceOptions, JErrorMixin):
     kca_sig_figs = dumpable(Int(6))
     summary_kca_sig_figs = dumpable(Int(6))
 
-    rad40_percent_sig_figs = dumpable(Int(6))
+    radiogenic_yield_sig_figs = dumpable(Int(6))
     cumulative_ar39_sig_figs = dumpable(Int(6))
 
     signal_sig_figs = dumpable(Int(6))
@@ -146,6 +147,10 @@ Ages calculated relative to FC-2 Fish Canyon Tuff sanidine interlaboratory stand
     subgroup_age_sorting = dumpable(Enum(*AGE_SORT_KEYS))
     individual_age_sorting = dumpable(Enum(*AGE_SORT_KEYS))
 
+    status_enabled = dumpable(Bool(True))
+    tag_enabled = dumpable(Bool(True))
+    analysis_label_enabled = dumpable(Bool(True))
+
     _persistence_name = 'xlsx_table_options'
 
     # include_j_error_in_individual_analyses = dumpable(Bool(False))
@@ -194,9 +199,9 @@ Ages calculated relative to FC-2 Fish Canyon Tuff sanidine interlaboratory stand
                 obj = yaml.load(rf)
                 return obj.get(group)
 
-    @property
-    def age_scalar(self):
-        return AGE_MA_SCALARS[self.age_units]
+    # @property
+    # def age_scalar(self):
+    #     return AGE_MA_SCALARS[self.age_units]
 
     @property
     def path(self):
@@ -221,7 +226,6 @@ Ages calculated relative to FC-2 Fish Canyon Tuff sanidine interlaboratory stand
 
         class UUItem(UCustom):
             height = -50
-
 
         unknown_grp = VGroup(Item('unknown_title', label='Table Heading', springy=True),
                              VBorder(VBorder(UItem('unknown_note_name',
@@ -275,7 +279,7 @@ Ages calculated relative to FC-2 Fish Canyon Tuff sanidine interlaboratory stand
                               isigfig('summary_age', 'Summary Age'),
                               isigfig('kca', 'K/Ca'),
                               isigfig('summary_kca', 'Summary K/Ca'),
-                              isigfig('rad40_percent', '%40Ar*'),
+                              isigfig('radiogenic_yield', '%40Ar*'),
                               isigfig('cumulative_ar39', 'Cum. %39Ar'),
                               isigfig('signal', 'Signal'),
                               isigfig('j', 'Flux'),
@@ -309,7 +313,10 @@ Ages calculated relative to FC-2 Fish Canyon Tuff sanidine interlaboratory stand
                                      label='Summary Rows'),
                               label='Ar/Ar')
 
-        general_col_grp = VGroup(iinc('rundate', 'Analysis RunDate'),
+        general_col_grp = VGroup(Item('status_enabled', label='Status'),
+                                 Item('analysis_label_enabled', label='Analysis Label'),
+                                 Item('tag_enabled', label='Tag'),
+                                 iinc('rundate', 'Analysis RunDate'),
                                  iinc('blanks', 'Applied Blank'),
                                  iinc('intercepts', 'Intercepts'),
                                  label='General')
@@ -350,11 +357,11 @@ Ages calculated relative to FC-2 Fish Canyon Tuff sanidine interlaboratory stand
 
         calc_grp = VGroup(J_ERROR_GROUP, label='Calc.')
 
-        v = View(Tabbed(g1, unknown_grp, calc_grp, blank_grp, air_grp, monitor_grp, summary_grp),
-                 resizable=True,
-                 width=750,
-                 title='XLSX Analysis Table Options',
-                 buttons=['OK', 'Cancel'])
+        v = okcancel_view(Tabbed(g1, unknown_grp, calc_grp, blank_grp, air_grp, monitor_grp, summary_grp),
+                          resizable=True,
+                          width=750,
+                          title='XLSX Analysis Table Options',
+                          )
         return v
 
 

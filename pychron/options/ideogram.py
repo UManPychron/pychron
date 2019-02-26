@@ -35,7 +35,7 @@ class IdeogramAuxPlot(AuxPlot):
 
 
 class IdeogramOptions(AgeOptions):
-
+    naux_plots = 8
     aux_plot_klass = IdeogramAuxPlot
 
     edit_label_format_button = Button
@@ -88,6 +88,7 @@ class IdeogramOptions(AgeOptions):
     cmap_analysis_number = Enum(list(color_map_name_dict.keys()))
     use_latest_overlay = Bool(False)
     show_results_table = Bool(False)
+    show_ttest_table = Bool(False)
 
     group_options_klass = IdeogramGroupOptions
 

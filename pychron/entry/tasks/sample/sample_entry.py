@@ -14,9 +14,6 @@
 # limitations under the License.
 # ===============================================================================
 
-from __future__ import absolute_import
-from __future__ import print_function
-
 import os
 import re
 
@@ -24,10 +21,12 @@ import yaml
 # ============= enthought library imports =======================
 from traits.api import HasTraits, Str, Bool, Property, Event, cached_property, \
     Button, String, Instance, List, Float, on_trait_change
-from traitsui.api import View, UItem, Item, VGroup, HGroup
+from traitsui.api import UItem, Item, VGroup, HGroup, EnumEditor
 
+from pychron.core.helpers.traitsui_shortcuts import okcancel_view
 from pychron.core.pychron_traits import EmailStr
 from pychron.dvc.dvc_irradiationable import DVCAble
+from pychron.entry.providers.macrostrat import get_lithology_values
 from pychron.entry.tasks.sample.sample_edit_view import SampleEditModel, LatFloat, LonFloat, SAMPLE_ATTRS
 from pychron.envisage.icon_button_editor import icon_button_editor
 from pychron.paths import paths
@@ -61,7 +60,6 @@ class PIStr(String):
 
 # class MaterialStr(RString):
 #     regex = MATERIAL_REGEX
-
 
 
 class ProjectStr(String):
@@ -140,6 +138,10 @@ class SampleSpec(Spec):
     igsn = Str
     storage_location = Str
     lithology = Str
+    lithology_class = Str
+    lithology_group = Str
+    lithology_type = Str
+
     location = Str
     approximate_age = Float
     elevation = Float
@@ -202,7 +204,17 @@ class SampleEntry(DVCAble):
     lat = LatFloat
     lon = LonFloat
     igsn = Str
+
     lithology = Str
+    lithology_class = Str
+    lithology_group = Str
+    lithology_type = Str
+
+    lithologies = List
+    lithology_classes = List
+    lithology_groups = List
+    lithology_types = List
+
     location = Str
     storage_location = Str
     approximate_age = Float
@@ -239,7 +251,7 @@ class SampleEntry(DVCAble):
     db_samples = List
     sample_filter = String(enter_set=True, auto_set=False)
     sample_filter_attr = Str('name')
-    sample_filter_attrs = List(('name', 'project', 'material', 'principal_investigator')+SAMPLE_ATTRS)
+    sample_filter_attrs = List(('name', 'project', 'material', 'principal_investigator') + SAMPLE_ATTRS)
     selected_db_samples = List
 
     _samples = List
@@ -262,6 +274,7 @@ class SampleEntry(DVCAble):
         self.refresh_grainsizes = True
         self.dvc.create_session()
         self.sample_edit_model.dvc = self.dvc
+        self._load_lithologies()
 
     def prepare_destroy(self):
         self._backup()
@@ -360,6 +373,13 @@ class SampleEntry(DVCAble):
             sams = self.dvc.get_samples_filter(self.sample_filter_attr, self.sample_filter)
             self.db_samples = sams
 
+    def _load_lithologies(self):
+        liths, groups, classes, types = get_lithology_values()
+        self.lithologies = liths
+        self.lithology_groups = groups
+        self.lithology_classes = classes
+        self.lithology_types = types
+
     def _backup(self):
         p = os.path.join(paths.sample_dir, '.last.yaml')
         self.dump(p)
@@ -433,6 +453,9 @@ class SampleEntry(DVCAble):
                                   igsn=s.igsn,
                                   storage_location=s.storage_location,
                                   lithology=s.lithology,
+                                  lithology_class=s.lithology_class,
+                                  lithology_group=s.lithology_group,
+                                  lithology_type=s.lithology_type,
                                   location=s.location,
                                   approximate_age=s.approximate_age,
                                   elevation=s.elevation,
@@ -499,6 +522,9 @@ class SampleEntry(DVCAble):
     def _clear_sample_attributes_button_fired(self):
         self.storage_location = ''
         self.lithology = ''
+        self.lithology_class = ''
+        self.lithology_group = ''
+        self.lithology_type = ''
         self.lat = 0
         self.lon = 0
         self.location = ''
@@ -508,31 +534,34 @@ class SampleEntry(DVCAble):
         self.approximate_age = 0
 
     def _configure_pi_button_fired(self):
-        v = View(VGroup(VGroup(UItem('principal_investigator'),
-                               label='Name', show_border=True),
-                        VGroup(Item('affiliation', label='Affiliation'),
-                               Item('email', label='Email'),
-                               label='Optional', show_border=True)),
-                 kind='livemodal', title='Set Principal Investigator Attributes',
-                 buttons=['OK', 'Cancel'])
+        v = okcancel_view(VGroup(VGroup(UItem('principal_investigator'),
+                                        label='Name', show_border=True),
+                                 VGroup(Item('affiliation', label='Affiliation'),
+                                        Item('email', label='Email'),
+                                        label='Optional', show_border=True)),
+                          title='Set Principal Investigator Attributes')
         self.edit_traits(view=v)
 
     def _configure_sample_button_fired(self):
-        v = View(VGroup(HGroup(icon_button_editor('clear_sample_attributes_button', 'clear')),
-                        VGroup(UItem('sample'),
-                               label='Name', show_border=True),
-                        VGroup(Item('lat', label='Latitude'),
-                               Item('lon', label='Longitude'),
-                               Item('location'),
-                               Item('elevation'),
-                               label='Location', show_border=True),
-                        VGroup(Item('lithology'),
-                               Item('approximate_age', label='Approx. Age (Ma)'),
-                               Item('storage_location'),
-                               show_border=True),
-                        ),
-                 kind='livemodal', title='Set Sample Attributes',
-                 buttons=['OK', 'Cancel'])
+        v = okcancel_view(VGroup(HGroup(icon_button_editor('clear_sample_attributes_button', 'clear')),
+                                 VGroup(UItem('sample'),
+                                        label='Name', show_border=True),
+                                 VGroup(Item('lat', label='Latitude'),
+                                        Item('lon', label='Longitude'),
+                                        Item('location'),
+                                        Item('elevation'),
+                                        label='Location', show_border=True),
+                                 VGroup(Item('lithology', editor=EnumEditor(name='lithologies')),
+                                        Item('lithology_class', label='Class',
+                                             editor=EnumEditor(name='lithology_classes')),
+                                        Item('lithology_group', label='Group',
+                                             editor=EnumEditor(name='lithology_groups')),
+                                        Item('lithology_type', label='Type', editor=EnumEditor(name='lithology_types')),
+
+                                        Item('approximate_age', label='Approx. Age (Ma)'),
+                                        Item('storage_location'),
+                                        show_border=True)),
+                          title='Set Sample Attributes')
         self.edit_traits(view=v)
 
     def _add_sample_button_fired(self):
@@ -548,13 +577,19 @@ class SampleEntry(DVCAble):
                 self.information_dialog('Please enter a project for this sample')
                 return
 
-            self._samples.append(SampleSpec(name=self.sample,
-                                            lat=self.lat,
-                                            lon=self.lon,
-                                            igsn=self.igsn,
-                                            note=self.note,
-                                            project=project_spec,
-                                            material=material_spec))
+            kw = {'project': project_spec, 'material': material_spec}
+            for attr in (('name', 'sample'),
+                         'lat', 'lon', 'igsn', 'note',
+                         'lithology', 'lithology_class', 'lithology_type', 'lithology_group'):
+                if isinstance(attr, tuple):
+                    specattr, attr = attr
+                else:
+                    specattr, attr = attr, attr
+
+                kw[specattr] = getattr(self, attr)
+
+            self._samples.append(SampleSpec(**kw))
+
             self._backup()
             self._add_sample_enabled = False
 

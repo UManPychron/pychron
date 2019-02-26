@@ -23,9 +23,10 @@ from sqlalchemy.sql.functions import count
 from sqlalchemy.util import OrderedSet
 # ============= enthought library imports =======================
 from traits.api import HasTraits, Str, List
-from traitsui.api import View, Item
+from traitsui.api import Item
 
 from pychron.core.helpers.datetime_tools import bin_datetimes
+from pychron.core.helpers.traitsui_shortcuts import okcancel_view
 from pychron.core.spell_correct import correct
 from pychron.database.core.database_adapter import DatabaseAdapter, binfunc
 from pychron.database.core.query import compile_query, in_func
@@ -40,7 +41,7 @@ from pychron.dvc.dvc_orm import AnalysisTbl, ProjectTbl, MassSpectrometerTbl, \
     AnalysisIntensitiesTbl, SimpleIdentifierTbl, SamplePrepChoicesTbl
 from pychron.globals import globalv
 from pychron.pychron_constants import ALPHAS, alpha_to_int, NULL_STR, EXTRACT_DEVICE, NO_EXTRACT_DEVICE, \
-    SAMPLE_PREP_STEPS
+    SAMPLE_PREP_STEPS, SAMPLE_METADATA
 
 
 def listify(obj):
@@ -134,11 +135,9 @@ class NewMassSpectrometerView(HasTraits):
     kind = Str
 
     def traits_view(self):
-        v = View(Item('name'),
-                 Item('kind'),
-                 buttons=['OK', 'Cancel'],
-                 title='New Mass Spectrometer',
-                 kind='livemodal')
+        v = okcancel_view(Item('name'),
+                          Item('kind'),
+                          title='New Mass Spectrometer')
         return v
 
 
@@ -205,6 +204,13 @@ class DVCDatabase(DatabaseAdapter):
                     if not self.get_users():
                         self.add_user('root')
 
+    def sync_ia_metadata(self, ia):
+        identifier = ia.identifier
+        info = self.get_identifier_info(identifier)
+        if info:
+            for attr in SAMPLE_METADATA:
+                setattr(ia, attr, info.get(attr))
+
     def check_restricted_name(self, name, category, check_principal_investigator=False):
         """
         return True is name is restricted
@@ -258,30 +264,45 @@ class DVCDatabase(DatabaseAdapter):
             r = self.get_repository(repo)
             return [a.analysis for a in r.repository_associations]
 
-    def get_analysis_info(self, li):
+    def get_identifier_info(self, li):
         with self.session_ctx():
             dbpos = self.get_identifier(li)
             if not dbpos:
                 self.warning('{} is not an identifier in the database'.format(li))
                 return None
             else:
-                project, pi, sample, material, irradiation, level, pos = '', '', '', '', '', '', ''
+                info = {}
                 sample = dbpos.sample
                 if sample:
                     if sample.project:
                         project = sample.project.name
+                        info['project'] = project
                         if sample.project.principal_investigator:
                             pi = sample.project.principal_investigator.name
+                            info['principal_investigator'] = pi
 
                     if sample.material:
                         material = sample.material.name
-                    sample = sample.name
+                        info['material'] = material
+                        info['grainsize'] = sample.material.grainsize or ''
 
-                level = dbpos.level.name
-                pos = dbpos.position
-                irradiation = dbpos.level.irradiation.name
+                    info['sample'] = sample.name
+                    info['latitude'] = sample.lat
+                    info['longitude'] = sample.lon
+                    info['lithology'] = sample.lithology
+                    info['lithology_class'] = sample.lithology_class
+                    info['lithology_type'] = sample.lithology_type
+                    info['lithology_group'] = sample.lithology_group
 
-            return project, pi, sample, material, irradiation, level, pos
+                    # todo: add rlocatiion/reference to database
+                    info['rlocation'] = ''
+                    info['reference'] = ''
+
+                info['irradiation_level'] = dbpos.level.name
+                info['irradiation_position'] = dbpos.position
+                info['irradiation'] = dbpos.level.irradiation.name
+
+            return info
 
     def set_analysis_tag(self, item, tagname):
         with self.session_ctx() as sess:

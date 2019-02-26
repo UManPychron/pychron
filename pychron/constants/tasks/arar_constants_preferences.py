@@ -26,6 +26,7 @@ from traitsui.api import View, Item, UItem, Spring, Label, spring, VGroup, HGrou
 
 # ============= standard library imports ========================
 # ============= local library imports  ==========================
+from pychron.core.helpers.traitsui_shortcuts import okcancel_view
 from pychron.envisage.resources import icon
 from pychron.envisage.tasks.base_preferences_helper import BasePreferencesHelper
 from pychron.pychron_constants import PLUSMINUS, NULL_STR, K_DECAY_CONSTANTS, PLUSMINUS_ONE_SIGMA
@@ -50,15 +51,13 @@ class DecayConstantEntry(HasTraits):
         return tuple([getattr(self, a) for a in LAMBDA_K_ATTRS])
 
     def traits_view(self):
-        v = View(VGroup(Item('name'),
-                        HGroup(UItem('lambda_e'), Label(PLUSMINUS), UItem('lambda_e_error'),
-                               show_border=True, label='Ar40K epsilon/yr'),
-                        HGroup(UItem('lambda_b'), Label(PLUSMINUS), UItem('lambda_b_error'),
-                               show_border=True, label='Ar40K beta/yr'),
-                        Item('total_k_decay', style='readonly')),
-                 buttons=['OK', 'Cancel'],
-                 title='Add Decay Constant Entry',
-                 kind='livemodal')
+        v = okcancel_view(VGroup(Item('name'),
+                                 HGroup(UItem('lambda_e'), Label(PLUSMINUS), UItem('lambda_e_error'),
+                                        show_border=True, label='Ar40K epsilon/yr'),
+                                 HGroup(UItem('lambda_b'), Label(PLUSMINUS), UItem('lambda_b_error'),
+                                        show_border=True, label='Ar40K beta/yr'),
+                                 Item('total_k_decay', style='readonly')),
+                          title='Add Decay Constant Entry')
         return v
 
 
@@ -73,14 +72,12 @@ class AtmConstantsEntry(HasTraits):
         return tuple([getattr(self, a) for a in ATM_ATTRS])
 
     def traits_view(self):
-        v = View(VGroup(Item('name'),
-                        HGroup(UItem('ar40_ar36_atm'), Label(PLUSMINUS), UItem('ar40_ar36_atm_error'),
-                               show_border=True, label='(Ar40/Ar36)atm'),
-                        HGroup(UItem('ar40_ar38_atm'), Label(PLUSMINUS), UItem('ar40_ar38_atm_error'),
-                               show_border=True, label='(Ar40/Ar38)atm')),
-                 buttons=['OK', 'Cancel'],
-                 title='Add Atm Constant Entry',
-                 kind='livemodal')
+        v = okcancel_view(VGroup(Item('name'),
+                                 HGroup(UItem('ar40_ar36_atm'), Label(PLUSMINUS), UItem('ar40_ar36_atm_error'),
+                                        show_border=True, label='(Ar40/Ar36)atm'),
+                                 HGroup(UItem('ar40_ar38_atm'), Label(PLUSMINUS), UItem('ar40_ar38_atm_error'),
+                                        show_border=True, label='(Ar40/Ar38)atm')),
+                          title='Add Atm Constant Entry')
         return v
 
 
@@ -115,9 +112,9 @@ class ArArConstantsPreferences(BasePreferencesHelper):
     ic_factor = Float(1.0)
     ic_factor_error = Float(0.0)
 
-    age_units = Enum('Ma', 'ka', 'Ga')
+    age_units = Enum('a', 'ka', 'Ma', 'Ga')
 
-    #citations
+    # citations
     ar40_ar36_atm_citation = Str
     ar40_ar38_atm_citation = Str
     lambda_e_citation = Str
@@ -190,7 +187,7 @@ class ArArConstantsPreferences(BasePreferencesHelper):
         if info.result and name:
             if name not in self.atm_constant_names:
                 nv = e.totuple()
-                for k,v in self.atm_constant_entries.items():
+                for k, v in self.atm_constant_entries.items():
                     print('k={}, v={}, nv={}'.format(k, v, nv))
 
                 exists = next((k for k, v in self.atm_constant_entries.items() if nv == v), None)
@@ -264,7 +261,7 @@ class ArArConstantsPreferences(BasePreferencesHelper):
     def _get_value(self, name, value):
         if name == 'total_k_decay':
             return self._get_total_k_decay()
-        elif name in ('decay_constant_entry_deletable','atm_constant_entry_deletable'):
+        elif name in ('decay_constant_entry_deletable', 'atm_constant_entry_deletable'):
             pass
         else:
             return super(ArArConstantsPreferences, self)._get_value(name, value)
