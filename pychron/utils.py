@@ -13,8 +13,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===============================================================================
-from __future__ import absolute_import
 from collections import namedtuple
+
+
+def autodoc_helper(name, bases):
+    try:
+        return type(name, bases, {})
+    except TypeError as e:
+        print(e)
+        print('asdfasdasfasdfasdfasdf', name, bases)
+        return type(name)
 
 
 def get_display_size():
