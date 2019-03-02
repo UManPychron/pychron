@@ -29,7 +29,7 @@ from pychron.processing.analyses.preferred import Preferred
 from pychron.processing.arar_age import ArArAge
 from pychron.processing.argon_calculations import calculate_plateau_age, age_equation, calculate_isochron
 from pychron.pychron_constants import ALPHAS, MSEM, SD, SUBGROUPING_ATTRS, ERROR_TYPES, WEIGHTED_MEAN, \
-    DEFAULT_INTEGRATED, SUBGROUPINGS, ARITHMETIC_MEAN, PLATEAU_ELSE_WEIGHTED_MEAN, WEIGHTINGS
+    DEFAULT_INTEGRATED, SUBGROUPINGS, ARITHMETIC_MEAN, PLATEAU_ELSE_WEIGHTED_MEAN, WEIGHTINGS, FLECK
 
 
 def AGProperty(*depends):
@@ -63,6 +63,7 @@ class AnalysisGroup(IdeogramPlotable):
     total_n = AGProperty()
 
     integrated_age_weighting = Enum(WEIGHTINGS)
+    include_j_error_in_integrated = Bool(False)
 
     age_error_kind = Enum(*ERROR_TYPES)
     kca_error_kind = Enum(*ERROR_TYPES)
@@ -135,6 +136,7 @@ class AnalysisGroup(IdeogramPlotable):
                          'irradiation_position',
                          'irradiation_level',
                          'irradiation_label',
+                         'unit',
                          'lithology',
                          'lithology_type',
                          'lithology_group',
@@ -396,6 +398,32 @@ class AnalysisGroup(IdeogramPlotable):
         else:
             return av, werr
 
+    def _calculate_integrated_mean_error(self, weighting, ks, rs):
+        sks = ks.sum()
+        weights = None
+
+        fs = rs / ks
+        errors = array([std_dev(f) for f in fs])
+        values = array([nominal_value(f) for f in fs])
+        if weighting == 'Volume':
+            vpercent = ks / sks
+            weights = [nominal_value(wi) for wi in (vpercent * errors) ** 2]
+        elif weighting == 'Variance':
+            weights = 1 / errors ** 2
+
+        if weights is not None:
+            wmean, sum_weights = average(values, weights=weights, returned=True)
+            if weighting == 'Volume':
+                werr = sum_weights ** 0.5
+            else:
+                werr = sum_weights ** -0.5
+
+            f = ufloat(wmean, werr)
+        else:
+            f = fs.sum()
+
+        return f
+
     def _calculate_integrated(self, attr, kind='total', weighting=None):
 
         uv = ufloat(0, 0)
@@ -418,7 +446,7 @@ class AnalysisGroup(IdeogramPlotable):
                     if not pr:
                         pr = 1.0
 
-                    pr = 1 / pr
+                    # pr = 1 / pr
 
                 v = r * pr
 
@@ -426,44 +454,18 @@ class AnalysisGroup(IdeogramPlotable):
 
             if attr in ('kca', 'kcl', 'signal_k39'):
                 ks = array([ai.get_computed_value('k39') for ai in ans])
-                sks = ks.sum()
 
                 if attr == 'kca':
                     cas = array([ai.get_non_ar_isotope('ca37') for ai in ans])
-                    weights = None
-                    if weighting == 'Volume':
-                        weights = ks / sks
-                    elif weighting == 'Variance':
-                        weights = [1 / std_dev(k) ** 2 for k in ks]
-
-                    if weights is not None:
-                        wmean, sum_weights = average([nominal_value(fi) for fi in ks / cas], weights=weights,
-                                                     returned=True)
-                        werr = sum_weights ** -0.5
-                        f = ufloat(wmean, werr)
-                    else:
-                        f = sks / cas.sum()
+                    f = self._calculate_integrated_mean_error(weighting, ks, cas)
                     uv = apply_pr(f, 'Ca_K')
                 elif attr == 'kcl':
-
                     cls = array([ai.get_non_ar_isotope('cl38') for ai in ans])
-                    weights = None
-                    if weighting == 'Volume':
-                        weights = ks / sks
-                    elif weighting == 'Variance':
-                        weights = [1 / std_dev(k) ** 2 for k in ks]
-
-                    if weights is not None:
-                        wmean, sum_weights = average([nominal_value(fi) for fi in ks / cls], weights=weights,
-                                                     returned=True)
-                        werr = sum_weights ** -0.5
-                        f = ufloat(wmean, werr)
-                    else:
-                        f = sks / cls.sum()
+                    f = self._calculate_integrated_mean_error(weighting, ks, cls)
                     uv = apply_pr(f, 'Cl_K')
 
                 elif attr == 'signal_k39':
-                    uv = sks
+                    uv = ks.sum()
 
             elif attr == 'radiogenic_yield':
                 ns = [ai.rad40 for ai in ans]
@@ -485,36 +487,44 @@ class AnalysisGroup(IdeogramPlotable):
     def _calculate_weighted_mean(self, attr, error_kind=None):
         return self._calculate_mean(attr, use_weights=True, error_kind=error_kind)
 
-    def _calculate_integrated_age(self, ans, weighting):
+    def _calculate_integrated_age(self, ans, weighting=None):
         ret = ufloat(0, 0)
         if ans and all((not isinstance(a, InterpretedAgeGroup) for a in ans)):
 
             rs = array([a.get_computed_value('rad40') for a in ans])
             ks = array([a.get_computed_value('k39') for a in ans])
 
-            sks = ks.sum()
-            fs = rs / ks
-            weights = None
-            if weighting == 'Volume':
-                vpercent = array([nominal_value(v) for v in ks / sks])
-                errs = array([std_dev(f) for f in fs])
-                weights = (vpercent / errs) ** 2
+            # sks = ks.sum()
+            # fs = rs / ks
+            if weighting is None:
+                weighting = self.integrated_age_weighting
 
-            elif weighting == 'Variance':
-                weights = [std_dev(f) ** -2 for f in fs]
+            # if weighting == 'Volume':
+            #     vpercent = array([nominal_value(v) for v in ks / sks])
+            #     errs = array([std_dev(f) for f in fs])
+            #     weights = (vpercent * errs) ** 2
+            #
+            # elif weighting == 'Variance':
+            #     weights = [std_dev(f) ** -2 for f in fs]
+            #
+            # if weights is not None:
+            #     wmean, sum_weights = average([nominal_value(fi) for fi in fs], weights=weights, returned=True)
+            #     if weighting == 'Volume':
+            #         werr = sum_weights ** 0.5
+            #     else:
+            #         werr = sum_weights ** -0.5
+            #
+            #     f = ufloat(wmean, werr)
+            # else:
+            #     f = rs.sum() / sks
+            f = self._calculate_integrated_mean_error(weighting, ks, rs)
 
-            if weights is not None:
-                wmean, sum_weights = average([nominal_value(fi) for fi in fs], weights=weights, returned=True)
-                werr = sum_weights ** -0.5
+            j = self.j
+            if not self.include_j_error_in_integrated:
+                j = nominal_value(j)
 
-                f = ufloat(wmean, werr)
-            else:
-                f = rs.sum() / sks
-
-            a = ans[0]
-            j = a.j
             try:
-                ret = age_equation(f, j, arar_constants=a.arar_constants)
+                ret = age_equation(f, j, arar_constants=self.arar_constants)
             except ZeroDivisionError:
                 pass
 
@@ -540,6 +550,7 @@ class StepHeatAnalysisGroup(AnalysisGroup):
     plateau_overlap_sigma = Int(2)
     plateau_mswd = Float
     plateau_mswd_valid = Bool
+    plateau_method = Str(FLECK)
 
     total_ar39 = AGProperty()
     total_k2o = AGProperty()
@@ -624,7 +635,7 @@ class StepHeatAnalysisGroup(AnalysisGroup):
             ans = self.analyses
         else:
             ans = list(self.clean_analyses())
-        return self._calculate_integrated_age(ans, self.integrated_age_weighting)
+        return self._calculate_integrated_age(ans)
 
     @property
     def fixed_steps(self):
@@ -655,7 +666,8 @@ class StepHeatAnalysisGroup(AnalysisGroup):
                            'fixed_steps': self.fixed_steps}
 
                 excludes = [i for i, ai in enumerate(ans) if ai.is_omitted()]
-                args = calculate_plateau_age(ages, errors, k39, options=options, excludes=excludes)
+                args = calculate_plateau_age(ages, errors, k39, method=self.plateau_method,
+                                             options=options, excludes=excludes)
 
                 if args:
                     v, e, pidx = args
