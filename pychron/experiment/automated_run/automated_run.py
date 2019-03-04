@@ -831,6 +831,7 @@ class AutomatedRun(Loggable):
                 self.spec.state = 'failed'
                 self.experiment_queue.refresh_table_needed = True
 
+        self.spectrometer_manager.spectrometer.active_detectors = []
         self.stop()
 
     def stop(self):
@@ -1733,6 +1734,8 @@ anaylsis_type={}
 
         self._active_detectors = self._set_active_detectors(dets)
 
+        self.spectrometer_manager.spectrometer.active_detectors = self._active_detectors
+
         if create:
             p.create(self._active_detectors)
         else:
@@ -1864,7 +1867,11 @@ anaylsis_type={}
         return plot_panel
 
     def _convert_valve(self, valve):
+        if isinstance(valve, int):
+            valve = str(valve)
+
         if valve and not isinstance(valve, (tuple, list)):
+
             if ',' in valve:
                 valve = [v.strip() for v in valve.split(',')]
             else:
