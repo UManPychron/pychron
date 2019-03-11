@@ -1,5 +1,5 @@
 # ===============================================================================
-# Copyright 2015 Jake Ross
+# Copyright 2019 ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,16 +14,17 @@
 # limitations under the License.
 # ===============================================================================
 
-# ============= enthought library imports =======================
-# ============= standard library imports ========================
-# ============= local library imports  ==========================
-from __future__ import absolute_import
-
-from pychron.pipeline.plot.panels.references_panel import ReferencesPanel
-from pychron.pipeline.plot.plotter.blanks import Blanks
+from pychron.options.views.isochron_views import InverseIsochronMainOptions
+from pychron.options.views.spectrum_views import SpectrumMainOptions
 
 
-class BlanksPanel(ReferencesPanel):
-    _figure_klass = Blanks
+class MainSpectrumView(SpectrumMainOptions):
+    pass
 
+
+class MainIsochronView(InverseIsochronMainOptions):
+    pass
+
+
+VIEWS = {'main': MainSpectrumView, 'main(spectrum)': MainSpectrumView, 'main(isochron)': MainIsochronView}
 # ============= EOF =============================================

@@ -15,14 +15,12 @@
 # ===============================================================================
 
 # ============= enthought library imports =======================
-from __future__ import absolute_import
-
 from traits.api import Bool
 
-from pychron.core.fits.fit import FilterFit
-from pychron.options.series import SeriesOptions, SeriesFitAuxPlot
 # ============= standard library imports ========================
 # ============= local library imports  ==========================
+from pychron.core.fits.fit import FilterFit
+from pychron.options.series import SeriesOptions, SeriesFitAuxPlot
 from pychron.options.views.blanks_views import VIEWS
 from pychron.pychron_constants import MAIN, APPEARANCE
 
@@ -53,7 +51,7 @@ class BlanksOptions(SeriesOptions):
     # _main_options_klass = BlanksMainOptions
 
     def initialize(self):
-        self.subview_names = [MAIN, APPEARANCE, 'Fit Matrix']
+        self.subview_names = [MAIN, 'Blanks', APPEARANCE, 'Fit Matrix']
 
     def set_reference_types(self, atypes):
         super(BlanksOptions, self).set_reference_types(atypes)

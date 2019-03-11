@@ -56,7 +56,10 @@ class InverseIsochronMainOptions(SubOptions):
                                                         UItem('results_fontsize'))),
                                     BorderHGroup(Item('age_sig_figs', label='Age'),
                                                  Item('yintercept_sig_figs', label='Y-Int.'),
-                                                 label='SigFigs')))
+                                                 label='SigFigs'),
+                                    BorderVGroup(Item('include_4036_mse', label='Ar40/Ar36'),
+                                                 Item('include_age_mse', label='Age'),
+                                                 label='MSE')))
 
         ellipse_grp = BorderHGroup(Item('fill_ellipses', label='fill'),
                                    Item('ellipse_kind', label='Kind'),
@@ -70,6 +73,7 @@ class InverseIsochronMainOptions(SubOptions):
         g2 = Group(BorderVGroup(info_grp,
                                 results_grp,
                                 label='Info'),
+                   Item('include_error_envelope'),
                    ellipse_grp,
                    label_grp,
 

@@ -107,6 +107,7 @@ INVERSE_ISOCHRON = """
 required:
 nodes:
   - klass: UnknownNode
+  - klass: GroupingNode
   - klass: InverseIsochronNode
 """
 
@@ -116,6 +117,13 @@ nodes:
   - klass: UnknownNode
   - klass: GroupingNode
   - klass: SpectrumNode
+"""
+
+COMPOSITE = """
+required:
+nodes:
+  - klass: UnknownNode
+  - klass: CompositeNode
 """
 
 FLUX_VISUALIZATION = """

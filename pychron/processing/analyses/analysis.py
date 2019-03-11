@@ -20,7 +20,7 @@ from math import ceil
 from operator import attrgetter
 
 import six
-from numpy import Inf
+from numpy import Inf, polyfit, polyval
 from pyface.message_dialog import information
 from pyface.qt import QtCore
 from traits.api import Event, Dict, List, Str
@@ -28,6 +28,7 @@ from traits.has_traits import HasTraits
 from traitsui.handler import Handler
 from uncertainties import ufloat, std_dev, nominal_value
 
+from pychron.core.helpers.fits import convert_fit
 from pychron.core.helpers.formatting import format_percent_error, floatfmt
 from pychron.core.helpers.isotope_utils import sort_isotopes
 from pychron.core.helpers.logger_setup import new_logger
@@ -98,10 +99,12 @@ def show_evolutions_factory(record_id, isotopes, show_evo=True, show_equilibrati
         nrows = ceil(len(isotopes) / ncols)
         isotopes = reorder(isotopes, nrows)
         g = ColumnStackedRegressionGraph(resizable=True, ncols=ncols, nrows=nrows,
-                                         container_dict={'padding_top': 40,
+                                         container_dict={'padding_top': 15*nrows,
                                                          'spacing': (0, 15),
                                                          'padding_bottom': 40})
+        resizable = 'hv'
     else:
+        resizable = 'h'
         isotopes = sort_isotopes(isotopes, reverse=False, key=attrgetter('name'))
         g = StackedRegressionGraph(resizable=True, container_dict={'spacing': 15})
 
@@ -113,7 +116,7 @@ def show_evolutions_factory(record_id, isotopes, show_evo=True, show_equilibrati
     for i, iso in enumerate(isotopes):
         ymi, yma = Inf, -Inf
 
-        p = g.new_plot(padding=[80, 10, 10, 40])
+        p = g.new_plot(padding=[80, 10, 10, 40], resizable=resizable)
         g.add_limit_tool(p, 'x')
         g.add_limit_tool(p, 'y')
         g.add_axis_tool(p, p.x_axis)
@@ -142,9 +145,9 @@ def show_evolutions_factory(record_id, isotopes, show_evo=True, show_equilibrati
                          filter_outliers_dict=iso.filter_outliers_dict,
                          color='black')
 
+            xmi, xma = min_max(xmi, xma, iso.offset_xs)
             if not scale_to_equilibration:
                 ymi, yma = min_max(ymi, yma, iso.ys)
-                xmi, xma = min_max(xmi, xma, iso.offset_xs)
 
         if show_baseline:
             baseline = iso.baseline
@@ -152,18 +155,31 @@ def show_evolutions_factory(record_id, isotopes, show_evo=True, show_equilibrati
                          type='scatter', fit=baseline.efit,
                          filter_outliers_dict=baseline.filter_outliers_dict,
                          color='blue')
+            xmi, xma = min_max(xmi, xma, baseline.offset_xs)
             if not scale_to_equilibration:
                 ymi, yma = min_max(ymi, yma, baseline.ys)
-                xmi, xma = min_max(xmi, xma, baseline.offset_xs)
 
         xpad = '0.025,0.05'
         ypad = '0.05'
         if scale_to_equilibration:
-            xma *= 1.1
             ypad = None
-            r = (yma - ymi) / 5
+            r = (yma - ymi) / 10
+            ymi = yma - r
+
+            fit = iso.fit
+            if fit != 'average':
+                fit, _ = convert_fit(iso.fit)
+                fy = polyval(polyfit(iso.offset_xs, iso.ys, fit), 0)
+                if ymi > fy:
+                    ymi = fy - r
+
+                fy = polyval(polyfit(iso.offset_xs, iso.ys, fit), xma)
+                if fy > yma:
+                    yma = fy
+                elif fy < ymi:
+                    ymi = fy - r
+
             yma += r
-            ymi -= r
 
         g.set_x_limits(min_=xmi, max_=xma, pad=xpad)
         g.set_y_limits(min_=ymi, max_=yma, pad=ypad, plotid=i)

@@ -48,7 +48,7 @@ from pychron.pipeline.pipeline_defaults import ISOEVO, BLANKS, ICFACTOR, IDEO, S
     REGRESSION_SERIES, VERTICAL_FLUX, \
     CSV_ANALYSES_EXPORT, BULK_EDIT, HISTORY_IDEOGRAM, HISTORY_SPECTRUM, AUDIT, SUBGROUP_IDEOGRAM, HYBRID_IDEOGRAM, \
     ANALYSIS_TABLE_W_IA, MASSSPEC_REDUCED, DEFINE_EQUILIBRATION, CA_CORRECTION_FACTORS, K_CORRECTION_FACTORS, \
-    FLUX_VISUALIZATION, CSV_RAW_DATA_EXPORT
+    FLUX_VISUALIZATION, CSV_RAW_DATA_EXPORT, COMPOSITE
 from pychron.pipeline.plot.editors.figure_editor import FigureEditor
 from pychron.pipeline.plot.editors.ideogram_editor import IdeogramEditor
 from pychron.pipeline.plot.editors.spectrum_editor import SpectrumEditor
@@ -225,6 +225,7 @@ class PipelineEngine(Loggable):
     selected_repositories = List
 
     selected_pipeline_template = Any
+    dclicked_pipeline_template = Event
 
     selected_unknowns = List
     selected_references = List
@@ -619,6 +620,7 @@ class PipelineEngine(Loggable):
     def refresh_figure_editors(self):
         for ed in self.state.editors:
             if isinstance(ed, FigureEditor):
+                print('refresh figure editors')
                 ed.refresh_needed = True
 
     def rerun_with(self, unks, post_run=True):
@@ -829,6 +831,7 @@ class PipelineEngine(Loggable):
                              ('Hybrid Ideogram', HYBRID_IDEOGRAM),
                              ('SubGroup Ideogram', SUBGROUP_IDEOGRAM),
                              ('Spectrum', SPEC),
+                             ('Spectrum/Isochron', COMPOSITE),
                              ('Series', SERIES),
                              ('InverseIsochron', INVERSE_ISOCHRON),
                              ('XY Scatter', XY_SCATTER),
@@ -1029,6 +1032,9 @@ class PipelineEngine(Loggable):
     def _dclicked_references_fired(self):
         if self.selected_references:
             self.recall_references()
+
+    def _dclicked_pipeline_template_fired(self):
+        self.run_needed = True
 
     def _selected_pipeline_template_changed(self, new):
         if isinstance(new, (PipelineTemplate, str, tuple)):
