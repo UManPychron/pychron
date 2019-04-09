@@ -33,9 +33,20 @@ EL_PROTOCOL = 'pychron.extraction_line.extraction_line_manager.ExtractionLineMan
 DVC_PROTOCOL = 'pychron.dvc.dvc.DVC'
 FURNACE_PROTOCOL = 'pychron.furnace.furnace_manager.BaseFurnaceManager'
 
-TTF_FONTS = ['Courier New', 'Arial', 'Georgia', 'Impact', 'Verdana']
-FONTS = ['Helvetica'] + TTF_FONTS
+TTF_FONTS = ['Andale Mono', 'Arial', 'Arial Black',
+             'Calibri', 'Cambria', 'Comic Sans MS', 'Consolas', 'Courier New',
+             'Georgia',
+             'Helvetica',
+             'Impact',
+             'Trebuchet MS',
+             'Verdana']
+
+FONTS = TTF_FONTS
 SIZES = [10, 6, 8, 9, 10, 11, 12, 14, 15, 18, 24, 36]
+
+from kiva.fonttools.font_manager import fontManager
+
+fontManager.defaultFamily = {'ttf': 'Arial', 'afm': 'Arial'}
 
 PLUSMINUS = '\N{Plus-minus sign}'
 SIGMA = '\N{Greek Small Letter Sigma}'
@@ -68,6 +79,11 @@ FIT_TYPES = ['Linear', 'Parabolic', 'Cubic',
              'Average', 'Exponential', WEIGHTED_MEAN]
 
 FIT_ERROR_TYPES = [SD, SEM, 'CI', 'MonteCarlo']
+SERIES_FIT_TYPES = [NULL_STR] + FIT_TYPES
+
+INTERPOLATE_TYPES = ['Preceding', 'Bracketing Interpolate', 'Bracketing Average', 'Succeeding']
+FIT_TYPES_INTERPOLATE = FIT_TYPES + INTERPOLATE_TYPES
+
 
 ARITHMETIC_MEAN = 'Arithmetic Mean'
 PLATEAU_ELSE_WEIGHTED_MEAN = 'Plateau else Weighted Mean'
@@ -81,7 +97,6 @@ SUBGROUPINGS = [WEIGHTED_MEAN,
 
 SUBGROUPING_ATTRS = ('age', 'kca', 'kcl', 'radiogenic_yield', 'moles_k39', 'signal_k39')
 
-
 FLECK_PLATEAU_DEFINITION = 'X contiguous Steps, Representing >Y% of the gas, Overlapping at 2 sigma'
 MAHON_PLATEAU_DEFINITION = 'X contiguous Steps, Representing >Y% of the gas, ' \
                            'with all plateau steps yielding a valid MSWD'
@@ -90,8 +105,7 @@ FLECK = 'Fleck 1977'
 MAHON = 'Mahon 1996'
 
 WEIGHTINGS = (NULL_STR, 'Volume', 'Variance')
-INTERPOLATE_TYPES = ['Preceding', 'Bracketing Interpolate', 'Bracketing Average', 'Succeeding']
-FIT_TYPES_INTERPOLATE = FIT_TYPES + INTERPOLATE_TYPES
+
 DELIMITERS = {',': 'comma', '\t': 'tab', ' ': 'space'}
 
 # AGE_SCALARS = {'Ga': 1e9, 'Ma': 1e6, 'ka': 1e3, 'a': 1}

@@ -34,6 +34,7 @@ from pychron.graph.error_bar_overlay import ErrorBarOverlay
 from pychron.graph.error_envelope_overlay import ErrorEnvelopeOverlay
 from pychron.graph.explicit_legend import ExplicitLegend
 from pychron.graph.graph import container_factory, Graph
+from pychron.graph.regression_graph import RegressionGraph
 from pychron.graph.stacked_graph import StackedGraph
 from pychron.graph.tools.data_tool import DataTool, DataToolOverlay
 from pychron.options.layout import FigureLayout
@@ -122,6 +123,8 @@ class BaseFluxVisualizationEditor(BaseTraitsEditor):
     rotation = Float(auto_set=False, enter_set=True)
 
     _regressor = None
+    _analyses = List
+    _individual_analyses_enabled = True
 
     @on_trait_change('monitor_positions:use')
     def handle_use(self):
@@ -148,7 +151,7 @@ class BaseFluxVisualizationEditor(BaseTraitsEditor):
         # print(z)
         # print(ze)
         n = x.shape[0]
-        if n >= 3:
+        if n >= 3 or self.plotter_options.model_kind in ('Weighted Mean', 'Matching', 'Bracketing'):
             # n = z.shape[0] * 10
             r = max((max(abs(x)), max(abs(y))))
             # r *= 1.25
@@ -191,6 +194,7 @@ class BaseFluxVisualizationEditor(BaseTraitsEditor):
                 p.jerr = float(je)
 
                 p.dev = (p.saved_j - j) / j * 100
+                p.mean_dev = (p.mean_j - j) / j *100
 
         if options.plot_kind == '2D':
             self._graph_contour(x, y, z, r, reg, refresh)
@@ -395,7 +399,9 @@ class BaseFluxVisualizationEditor(BaseTraitsEditor):
 
     def _graph_hole_vs_j(self, x, y, r, reg, refresh):
 
-        sel = [i for i, (a, x, y, e) in enumerate(zip(*self._analyses)) if a.is_omitted()]
+        if self._individual_analyses_enabled:
+            sel = [i for i, (a, x, y, e) in enumerate(zip(*self._analyses)) if a.is_omitted()]
+
         g = self.graph
         if not isinstance(g, Graph):
             g = Graph(container_dict={'bgcolor': self.plotter_options.bgcolor})
@@ -449,9 +455,15 @@ class BaseFluxVisualizationEditor(BaseTraitsEditor):
                 line.error_envelope = ee
                 line.underlays.append(ee)
 
-            # plot the individual analyses
-            # plot1 == scatter
-            iscatter, iys = self._graph_individual_analyses()
+            miy = 100
+            may = -1
+
+            if self._individual_analyses_enabled:
+                # plot the individual analyses
+                # plot1 == scatter
+                iscatter, iys = self._graph_individual_analyses()
+                miy = min(iys)
+                may = max(iys)
 
             # plot means
             # plot2 == scatter
@@ -467,25 +479,29 @@ class BaseFluxVisualizationEditor(BaseTraitsEditor):
 
             add_inspector(scatter, self._additional_info)
 
-            ymi = min(lyy.min(), min(iys))
-            yma = max(uyy.max(), max(iys))
+            ymi = min(lyy.min(), miy)
+            yma = max(uyy.max(), may)
             g.set_x_limits(-3.5, 3.5)
             g.set_y_limits(ymi, yma, pad='0.1')
 
-            # set metadata last because it will trigger a refresh
-            self.suppress_metadata_change = True
-            iscatter.index.metadata['selections'] = sel
-            self.suppress_metadata_change = False
+            if self._individual_analyses_enabled:
+                # set metadata last because it will trigger a refresh
+                self.suppress_metadata_change = True
+                iscatter.index.metadata['selections'] = sel
+                self.suppress_metadata_change = False
 
-            # add a legend
-            if not is_matching:
-                labels = [('plot1', 'Individual'),
-                          ('plot2', 'Mean'),
-                          ('plot0', 'Fit'),
-                          ]
+            if self._individual_analyses_enabled:
+                # add a legend
+                if not is_matching:
+                    labels = [('plot1', 'Individual'),
+                              ('plot2', 'Mean'),
+                              ('plot0', 'Fit'),
+                              ]
+                else:
+                    labels = [('plot0', 'Individual'),
+                              ('plot1', 'Mean')]
             else:
-                labels = [('plot0', 'Individual'),
-                          ('plot1', 'Mean')]
+                labels = [('plot0', 'Mean')]
 
             legend = ExplicitLegend(plots=self.graph.plots[0].plots,
                                     labels=labels)
@@ -537,13 +553,13 @@ class BaseFluxVisualizationEditor(BaseTraitsEditor):
         self.max_j = max(z)
 
         g = self.graph
-        layout = FigureLayout(fixed='square')
+        layout = FigureLayout(fixed='filled_grid')
         nrows, ncols = layout.calculate(len(x))
 
         if not isinstance(g, Graph):
-            g = Graph(container_dict={'bgcolor': 'gray',
-                                      'kind': 'g',
-                                      'shape': (nrows, ncols)})
+            g = RegressionGraph(container_dict={'bgcolor': 'gray',
+                                                'kind': 'g',
+                                                'shape': (nrows, ncols)})
             self.graph = g
 
         def get_ip(xi, yi):
@@ -565,12 +581,13 @@ class BaseFluxVisualizationEditor(BaseTraitsEditor):
                         ye = ze[idx] * scale
                     except IndexError:
                         continue
-                    if hasattr(g, 'rules'):
-                        l1, l2, l3 = g.rules[idx]
-                        l1.value = yy
-                        l2.value = yy + ye
-                        l3.value = yy - ye
-                        g.refresh()
+                    # if hasattr(g, 'rules'):
+                    #     if idx in g.rules:
+                    #         l1, l2, l3 = g.rules[idx]
+                    #         l1.value = yy
+                    #         l2.value = yy + ye
+                    #         l3.value = yy - ye
+
 
                 else:
                     plot = g.new_plot(padding_left=65, padding_right=5, padding_top=30, padding_bottom=5)
@@ -596,13 +613,15 @@ class BaseFluxVisualizationEditor(BaseTraitsEditor):
                     n = len(ais)
 
                     # plot mean value
-                    l1 = g.add_horizontal_rule(yy, color='black', line_style='solid', plotid=idx)
-                    l2 = g.add_horizontal_rule(yy + ye, plotid=idx)
-                    l3 = g.add_horizontal_rule(yy - ye, plotid=idx)
-                    if hasattr(g, 'rules'):
-                        g.rules.append((l1, l2, l3))
-                    else:
-                        g.rules = [(l1, l2, l3)]
+                    # l1 = g.add_horizontal_rule(yy, color='black', line_style='solid', plotid=idx)
+                    # l2 = g.add_horizontal_rule(yy + ye, plotid=idx)
+                    # l3 = g.add_horizontal_rule(yy - ye, plotid=idx)
+                    # rs = (l1, l2, l3)
+                    # d = {idx: rs}
+                    # if hasattr(g, 'rules'):
+                    #     g.rules.update(d)
+                    # else:
+                    #     g.rules = d
 
                     # plot individual analyses
                     fs = [a.model_j(monage, lk) * scale for a in ais]
@@ -610,10 +629,15 @@ class BaseFluxVisualizationEditor(BaseTraitsEditor):
                     iys = array([nominal_value(fi) for fi in fs])
                     ies = array([std_dev(fi) for fi in fs])
 
-                    s, _p = g.new_series(linspace(0, n - 1, n), iys, yerror=ies, type='scatter',
-                                         marker='circle', marker_size=3)
+                    p_, s, l_ = g.new_series(linspace(0, n - 1, n), iys, yerror=ies, type='scatter',
+                                             fit='weighted mean' if self.plotter_options.use_weighted_fit else
+                                             'average_sem',
+                                             add_point_inspector=False,
+                                             add_inspector=False,
+                                             marker='circle', marker_size=3)
                     g.set_x_limits(0, n - 1, pad='0.1', plotid=idx)
                     g.set_y_limits(min(iys - ies), max(iys + ies), pad='0.1', plotid=idx)
+                    g.add_statistics(plotid=idx)
 
                     ebo = ErrorBarOverlay(component=s, orientation='y')
                     s.underlays.append(ebo)
@@ -625,6 +649,7 @@ class BaseFluxVisualizationEditor(BaseTraitsEditor):
                     sel = [i for i, a in enumerate(ais) if a.is_omitted()]
                     s.index.metadata['selections'] = sel
                     self.suppress_metadata_change = False
+        g.refresh()
 
     def _graph_individual_analyses(self):
         g = self.graph
@@ -668,6 +693,8 @@ class FluxVisualizationEditor(BaseFluxVisualizationEditor):
     ring_graph = Instance(StackedGraph)
     deviation_graph = Instance(StackedGraph)
     spoke_graph = Instance(StackedGraph)
+
+    _individual_analyses_enabled = False
 
     def model_plane(self, x, y, z, ze, model_points=None):
         r = max((max(abs(x)), max(abs(y))))
@@ -715,7 +742,7 @@ class FluxVisualizationEditor(BaseFluxVisualizationEditor):
             unkj = [p.mean_j for p in unknowns]
             fx, fy, mx, my = self.model_plane(x, y, z, ze, model_points=unkpts)
 
-            x,y = zip(*unkpts)
+            x, y = zip(*unkpts)
             mx = arctan2(x, y)
             ys = (unkj - my) / unkj * 100
             s = g.new_series(mx, ys)[0]
@@ -830,8 +857,8 @@ class FluxVisualizationEditor(BaseFluxVisualizationEditor):
 
     def predict_values(self, refresh=False):
         super(FluxVisualizationEditor, self).predict_values()
-        # self._update_ring_graph()
-        self._update_half_ring_graph()
+        self._update_ring_graph()
+        # self._update_half_ring_graph()
 
     def set_positions(self, pos):
         self.monitor_positions = pos
@@ -843,8 +870,8 @@ class FluxVisualizationEditor(BaseFluxVisualizationEditor):
                 ObjectColumn(name='identifier'),
                 ObjectColumn(name='mean_j', format='%0.5e'),
                 ObjectColumn(name='mean_jerr', format='%0.5e'),
-                ObjectColumn(name='j', format='%0.5e'),
-                ObjectColumn(name='dev', format='%0.2f')
+                ObjectColumn(name='j', label='Pred. J', format='%0.5e'),
+                ObjectColumn(name='mean_dev', label='Mean Dev.', format='%0.2f')
                 ]
         g3d = VGroup(UItem('rotation'),
                      HGroup(UItem('graph', style='custom'),

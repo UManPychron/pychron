@@ -190,6 +190,8 @@ class DVCAnalysis(Analysis):
                             func(jd)
                         except BaseException as e:
                             self.warning('Failed loading {}. path={}. error={}'.format(modifier, path, e))
+                            import traceback
+                            self.debug(traceback.format_exc())
                     else:
                         self.debug('path is empty. {}'.format(path))
                 else:
@@ -377,7 +379,9 @@ class DVCAnalysis(Analysis):
                      n=i.n, fn=i.fn,
                      reviewed=reviewed,
                      include_baseline_error=i.include_baseline_error,
-                     filter_outliers_dict=i.filter_outliers_dict)
+                     filter_outliers_dict=i.filter_outliers_dict,
+                     user_excluded=i.user_excluded,
+                     outlier_excluded=i.outlier_excluded)
 
         # save intercepts
         if isoks:
@@ -385,11 +389,13 @@ class DVCAnalysis(Analysis):
             for k in isoks:
                 try:
                     iso = isos[k]
-                    siso = sisos[k]
-                    if siso:
-                        update(iso, siso)
                 except KeyError:
-                    pass
+                    iso = {}
+                    isos[k] = iso
+
+                siso = sisos[k]
+                if siso:
+                    update(iso, siso)
 
             self._dump(isos, path)
 
@@ -415,8 +421,12 @@ class DVCAnalysis(Analysis):
         sisos = self.isotopes
 
         for k in keys:
-            if k in isos and k in sisos:
-                blank = isos[k]
+            if isinstance(isos, dict):
+                blank = isos.get(k, {})
+            else:
+                blank = {}
+
+            if k in sisos:
                 siso = sisos[k]
                 if siso.temporary_blank is not None:
                     blank['value'] = v = float(siso.temporary_blank.value)
@@ -477,11 +487,17 @@ class DVCAnalysis(Analysis):
 
             self.additional_peak_center_data = {k: unpack(pd['points'], jd['fmt'], decode=True)
                                                 for k, pd in jd.items() if k not in (refdet, 'fmt',
+                                                                                     'interpolation',
                                                                                      'reference_detector',
                                                                                      'reference_isotope')}
 
         self.peak_center = pd['center_dac']
         self.peak_center_reference_detector = refdet
+
+        interpolation = jd.get('interpolation', 'cubic')
+        self.peak_center_use_interpolation = bool(interpolation)
+        self.peak_center_interpolation_kind = interpolation
+        self.peak_center_reference_isotope = jd.get('reference_isotope')
 
     def _load_tags(self, jd):
         self.set_tag(jd)
@@ -516,6 +532,7 @@ class DVCAnalysis(Analysis):
                 if fod:
                     i.set_filter_outliers_dict(**fod)
                 i.set_fit(v['fit'], notify=False)
+                i.set_user_excluded(v.get('user_excluded'))
                 i.reviewed = v.get('reviewed', False)
 
     def _load_value_error(self, item, obj):

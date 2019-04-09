@@ -100,7 +100,7 @@ class BaseFindFluxNode(FindNode):
 
             options = pp.get('options')
             if options:
-                model_kind = pp.get('model_kind', '')
+                model_kind = options.get('model_kind', '')
 
         x, y, r, idx = geom[hole_id - 1]
         fp = FluxPosition(identifier=identifier,
@@ -157,7 +157,7 @@ class FindRepositoryAnalysesNode(FindNode):
 
 
 class FindFluxMonitorMeansNode(BaseFindFluxNode):
-    name = 'Find Flux Monitors'
+    name = 'Find Flux Monitors Means'
 
     def _load_hook(self, nodedict):
         self.level = nodedict.get('level', '')

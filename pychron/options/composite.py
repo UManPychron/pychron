@@ -13,17 +13,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===============================================================================
-from traits.api import Instance
+from traits.api import Instance, on_trait_change
 
 from pychron.options.isochron import InverseIsochronOptions
-from pychron.options.options import BaseOptions
+from pychron.options.options import FigureOptions
 from pychron.options.spectrum import SpectrumOptions
 from pychron.options.views.composite_views import VIEWS
+from pychron.pychron_constants import MAIN
 
 
-class CompositeOptions(BaseOptions):
-    spectrum_options = Instance(SpectrumOptions, ())
-    isochron_options = Instance(InverseIsochronOptions, ())
+class CompositeOptions(FigureOptions):
+    spectrum_options = Instance(SpectrumOptions)
+    isochron_options = Instance(InverseIsochronOptions)
     use_plotting = True
 
     def setup(self):
@@ -35,31 +36,31 @@ class CompositeOptions(BaseOptions):
         self.spectrum_options.setup()
         self.isochron_options.setup()
 
+    @on_trait_change('spectrum_options:[bgcolor,plot_bgcolor]')
+    def handle(self, obj, name, old, new):
+        self.isochron_options.trait_set(**{name: new})
+
     def get_subview(self, name):
         name = name.lower()
 
-        if name == 'main':
-            try:
-                klass = self._get_subview(name)
-            except KeyError:
-                klass = self._main_options_klass
-        else:
-            klass = self._get_subview(name)
+        klass = self._get_subview(name)
 
-        # if self.isochron_options is None:
-        #     self.isochron_options = InverseIsochronOptions()
-        # if self.spectrum_options is None:
-        #     self.spectrum_options = SpectrumOptions()
-
-        if name in ('main', 'main(spectrum)'):
+        if name in (MAIN.lower(), 'spectrum', 'appearance(spec.)', 'display(spec.)', 'calculations(spec.)'):
             obj = klass(model=self.spectrum_options)
-        elif name == 'main(isochron)':
+        elif name in ('isochron', 'appearance(iso.)'):
             obj = klass(model=self.isochron_options)
 
         return obj
 
     def initialize(self):
-        self.subview_names = ['Main(Spectrum)', 'Main(Isochron)']
+        self.subview_names = ['Spectrum',
+                              'Appearance(Spec.)',
+                              'Display(Spec.)',
+                              'Calculations(Spec.)',
+
+                              'Isochron',
+                              'Appearance(Iso.)',
+                              ]
 
     def _get_subview(self, name):
         return VIEWS[name]

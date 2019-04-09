@@ -163,7 +163,7 @@ def show_evolutions_factory(record_id, isotopes, show_evo=True, show_equilibrati
         ypad = '0.05'
         if scale_to_equilibration:
             ypad = None
-            r = (yma - ymi) / 10
+            r = (yma - ymi) * 0.02
             ymi = yma - r
 
             fit = iso.fit
@@ -397,6 +397,9 @@ class Analysis(ArArAge, IdeogramPlotable):
     peak_center_data = None
     peak_center_reference_detector = None
     additional_peak_center_data = None
+    peak_center_interpolation_kind = None
+    peak_center_use_interpolation = False
+    peak_center_reference_isotope = None
     collection_version = ''
     source_parameters = Dict
     filament_parameters = Dict

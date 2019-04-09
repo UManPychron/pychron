@@ -95,7 +95,7 @@ class BaseSpectrometer(SpectrometerDevice):
             self.name = self.microcontroller.name
 
         self.magnet.finish_loading()
-
+        self.source.finish_loading()
         self.test_connection()
 
     def test_connection(self, force=True):
@@ -289,21 +289,26 @@ class BaseSpectrometer(SpectrometerDevice):
                 self.debug('cannot update detector "{}"'.format(detector))
             else:
                 det.isotope = isotope
-
+                det.mass = self.map_mass(isotope)
                 self.debug('molweights={}'.format(self.molecular_weights))
-                index = det.index
-                try:
 
+                try:
+                    index = det.index
                     dets = self.active_detectors
                     if not dets:
                         dets = self.detectors
+                        idxs = [di.index for di in dets]
+                    else:
+                        idxs = range(len(dets))
+                        index = next((i for i, d in enumerate(dets) if d.index == index), 0)
 
                     nmass = self.map_mass(isotope)
-                    for di in dets:
-                        mass = nmass - di.index + index
+                    for di, didx in zip(dets, idxs):
+                        mass = nmass - didx + index
                         isotope = self.map_isotope(mass)
                         self.debug('setting detector {} to {} ({})'.format(di.name, isotope, mass))
                         di.isotope = isotope
+                        di.mass = mass
 
                 except BaseException as e:
                     self.warning(
@@ -423,7 +428,7 @@ class BaseSpectrometer(SpectrometerDevice):
 
         for i, name in enumerate(config.sections()):
             relative_position = self.config_get(config, name, 'relative_position', cast='float')
-            gain = self.config_get(config, name, 'gain', cast='float', default=1.0)
+            software_gain = self.config_get(config, name, 'software_gain', cast='float', default=1.0)
 
             color = self.config_get(config, name, 'color', default='black')
             default_state = self.config_get(config, name, 'default_state',
@@ -452,7 +457,7 @@ class BaseSpectrometer(SpectrometerDevice):
 
             self._add_detector(name=name,
                                index=index,
-                               gain=gain,
+                               software_gain=software_gain,
                                serial_id=serial_id,
                                relative_position=relative_position,
                                use_deflection=use_deflection,
@@ -492,7 +497,7 @@ class BaseSpectrometer(SpectrometerDevice):
         for k, v in zip(keys, signals):
             det = self.get_detector(k)
             det.set_intensity(v)
-            gsignals.append(v * det.gain)
+            gsignals.append(v * det.software_gain)
 
         return keys, array(gsignals)
 

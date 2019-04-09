@@ -117,10 +117,6 @@ class Ideogram(BaseArArFigure):
     ytitle = 'Relative Probability'
     subgroup_id = 0
     subgroup = None
-    # xlimits_updated = Event
-    # ylimits_updated = Event
-
-    # _omit_key = 'omit_ideo'
 
     def plot(self, plots, legend=None):
         """
@@ -487,7 +483,7 @@ class Ideogram(BaseArArFigure):
                     es = self.options.error_bar_nsigma
                     ts.append(u'Mean: {} {}{}{} Data: {}{}{}'.format(m, PLUSMINUS, s, SIGMA, PLUSMINUS, es, SIGMA))
                 if self.options.show_error_type_info:
-                    ts.append('Error Type: {}'.format(self.options.error_calc_method))
+                    ts.append(u'Error Type: {}'.format(self.options.error_calc_method))
 
                 if ts:
                     self._add_info_label(plot, ts)
@@ -498,7 +494,6 @@ class Ideogram(BaseArArFigure):
         gid = ogid + 1
 
         opt = self.options
-        we = opt.nsigma
         text = ''
         if opt.display_mean:
             total_n = self.xs.shape[0]
@@ -513,16 +508,13 @@ class Ideogram(BaseArArFigure):
             text = self._make_mean_label(wm, we * opt.nsigma, n, total_n, mswd_args,
                                          display_n=opt.display_mean_n)
 
-        # group = self.options.get_group(self.group_id)
-        # color = group.color
-
         plotkw = opt.get_plot_dict(ogid, self.subgroup_id)
 
         m = MeanIndicatorOverlay(component=line,
                                  x=wm,
                                  y=20 * gid,
                                  error=we,
-                                 nsgima=opt.nsigma,
+                                 nsigma=opt.nsigma,
                                  color=plotkw['color'],
                                  visible=opt.display_mean_indicator,
                                  id='mean_{}'.format(self.group_id))
@@ -557,9 +549,13 @@ class Ideogram(BaseArArFigure):
         #     self.update_graph_metadata(None, name, old, new)
 
     def update_graph_metadata(self, obj, name, old, new):
+        if hasattr(obj, 'suppress_update') and obj.suppress_update:
+            return
+
         ans = self.sorted_analyses
         sel = obj.metadata.get('selections', [])
         self._set_selected(ans, sel)
+
         self._rebuild_ideo(sel)
         self.recalculate_event = True
 
