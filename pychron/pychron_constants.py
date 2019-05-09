@@ -122,6 +122,7 @@ DETECTOR_IC = 'detector_ic'
 PAUSE = 'pause'
 DEGAS = 'degas'
 AIR = 'air'
+BACKGROUND = 'background'
 
 BLANK_UNKNOWN = 'blank_unknown'
 BLANK_EXTRACTIONLINE = 'blank_extractionline'
@@ -135,6 +136,7 @@ WHIFF = 'whiff'
 EXTRACT_DEVICE = 'Extract Device'
 NO_EXTRACT_DEVICE = 'No Extract Device'
 
+NO_BLANK_CORRECT = (BLANK, DETECTOR_IC, BACKGROUND)
 seeds = string.ascii_uppercase
 ALPHAS = [a for a in seeds] + ['{}{}'.format(a, b)
                                for a in seeds
@@ -220,6 +222,15 @@ K_DECAY_CONSTANTS = {'Min et al., 2000': (5.80e-11, 0, 4.883e-10, 0),
 FLUX_CONSTANTS = {'FC Min': {'lambda_ec': [5.80e-11, 0], 'lambda_b': [4.883e-10, 0], 'monitor_age': 28.201},
                   'FC SJ': {'lambda_ec': [5.81e-11, 0], 'lambda_b': [4.962e-10, 0],
                             'monitor_age': 28.02}}
+
+LEAST_SQUARES_1D = 'LeastSquares1D'
+WEIGHTED_MEAN_1D = 'WeightedMean1D'
+MATCHING = 'Matching'
+BRACKETING = 'Bracketing'
+PLANE = 'Plane'
+BOWL = 'Bowl'
+FLUX_MODEL_KINDS = PLANE, BOWL, WEIGHTED_MEAN, MATCHING, BRACKETING, LEAST_SQUARES_1D, WEIGHTED_MEAN_1D
+
 
 if paths.setup_dir:
     flux_constants = os.path.join(paths.setup_dir, 'flux_constants.yaml')
